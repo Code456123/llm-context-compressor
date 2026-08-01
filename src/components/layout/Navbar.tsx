@@ -1,14 +1,26 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Search, Bell, Settings, LogOut, ChevronDown, Sparkles } from 'lucide-react';
+import { Search, Bell, Settings, LogOut, ChevronDown } from 'lucide-react';
 import { LightningLogo } from '../ui/LightningLogo';
 import { glow, pulse } from '../../animations/variants';
+import { useAuth } from '../../lib/AuthContext';
 
 export const Navbar: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
+
+  const userEmail = user?.email ?? '';
+  const avatarInitial = userEmail ? userEmail[0].toUpperCase() : 'U';
+
+  const handleLogout = async () => {
+    setShowDropdown(false);
+    await signOut();
+    navigate('/signin', { replace: true });
+  };
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-white/10 bg-[#08090A]/90 backdrop-blur-xl h-14">
@@ -96,7 +108,7 @@ export const Navbar: React.FC = () => {
               className="flex items-center gap-2 rounded-lg p-1 hover:bg-white/5 transition-colors"
             >
               <div className="w-7 h-7 rounded-full bg-white text-black font-bold text-xs flex items-center justify-center border border-white/20">
-                A
+                {avatarInitial}
               </div>
               <ChevronDown className="w-3.5 h-3.5 text-zinc-400 hidden sm:block" />
             </button>
@@ -104,8 +116,8 @@ export const Navbar: React.FC = () => {
             {showDropdown && (
               <div className="absolute right-0 mt-2 w-48 rounded-xl border border-white/10 bg-zinc-950 p-1.5 shadow-2xl z-50 text-xs font-mono">
                 <div className="px-3 py-2 border-b border-white/10">
-                  <p className="font-semibold text-white">Enterprise User</p>
-                  <p className="text-[10px] text-zinc-500 truncate">admin@contextflow.ai</p>
+                  <p className="font-semibold text-white">Signed In</p>
+                  <p className="text-[10px] text-zinc-400 truncate">{userEmail}</p>
                 </div>
                 <Link
                   to="/dashboard/settings"
@@ -115,14 +127,13 @@ export const Navbar: React.FC = () => {
                   <Settings className="w-3.5 h-3.5" />
                   <span>Settings</span>
                 </Link>
-                <Link
-                  to="/"
-                  onClick={() => setShowDropdown(false)}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors"
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  <span>Exit Console</span>
-                </Link>
+                  <span>Sign Out</span>
+                </button>
               </div>
             )}
           </div>
