@@ -1,78 +1,75 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { History, Download, Search, Filter, ArrowUpRight, Zap, CheckCircle2 } from 'lucide-react';
+import { History, Download, Search, CheckCircle2, Loader2, AlertTriangle, Inbox } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
+import { N8nResult } from '../types';
 
 export const HistoryPage: React.FC = () => {
+  const [runs, setRuns] = useState<N8nResult[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState('all');
 
-  const mockRuns = [
-    {
-      id: 'run_99210',
-      name: 'SEC 10-K Earnings MD&A Report',
-      model: 'GPT-4o',
-      rawTokens: 108400,
-      compressedTokens: 29800,
-      savings: '72.5%',
-      latency: '38ms',
-      time: '10 mins ago',
-      status: 'Completed',
-    },
-    {
-      id: 'run_99209',
-      name: 'Spring Microservices Trace Log Dump',
-      model: 'Claude 3.5 Sonnet',
-      rawTokens: 84200,
-      compressedTokens: 23580,
-      savings: '72.0%',
-      latency: '24ms',
-      time: '42 mins ago',
-      status: 'Completed',
-    },
-    {
-      id: 'run_99208',
-      name: 'Customer Support 5-Year Ticket Context',
-      model: 'Gemini 1.5 Pro',
-      rawTokens: 96000,
-      compressedTokens: 26880,
-      savings: '72.0%',
-      latency: '31ms',
-      time: '2 hours ago',
-      status: 'Completed',
-    },
-    {
-      id: 'run_99207',
-      name: 'PostgreSQL Query Planner AST Execution',
-      model: 'GPT-4o',
-      rawTokens: 64100,
-      compressedTokens: 18589,
-      savings: '71.0%',
-      latency: '29ms',
-      time: '5 hours ago',
-      status: 'Completed',
-    },
-    {
-      id: 'run_99206',
-      name: 'React 19 Server Components Codebase',
-      model: 'Claude 3.5 Sonnet',
-      rawTokens: 142000,
-      compressedTokens: 38340,
-      savings: '73.0%',
-      latency: '45ms',
-      time: '1 day ago',
-      status: 'Completed',
-    },
-  ];
+  useEffect(() => {
+    const fetchHistory = async () => {
+      setIsLoading(true);
+      setError(null);
 
-  const filteredRuns = mockRuns.filter((run) => {
-    const matchesSearch =
-      run.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      run.model.toLowerCase().includes(searchTerm.toLowerCase());
-    if (selectedFilter === 'all') return matchesSearch;
-    if (selectedFilter === 'gpt4') return matchesSearch && run.model === 'GPT-4o';
-    if (selectedFilter === 'claude') return matchesSearch && run.model === 'Claude 3.5 Sonnet';
-    return matchesSearch;
+      const { data, error: sbError } = await supabase
+        .from('compressions')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (sbError) {
+        setError(sbError.message);
+      } else {
+        setRuns((data as N8nResult[]) ?? []);
+      }
+      setIsLoading(false);
+    };
+
+    fetchHistory();
+  }, []);
+
+  const filteredRuns = runs.filter((run) => {
+    if (!searchTerm.trim()) return true;
+    const q = searchTerm.toLowerCase();
+    return (
+      run.id?.toLowerCase().includes(q) ||
+      run.status?.toLowerCase().includes(q) ||
+      run.organisation?.toLowerCase().includes(q)
+    );
   });
+
+  const formatDate = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      });
+    } catch {
+      return iso;
+    }
+  };
+
+  const statusBadge = (status: string) => {
+    if (status === 'completed') {
+      return (
+        <span className="inline-flex items-center gap-1 text-emerald-400">
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          <span>Completed</span>
+        </span>
+      );
+    }
+    if (status === 'input_too_short') {
+      return <span className="text-amber-400">Too Short</span>;
+    }
+    if (status === 'below_target') {
+      return <span className="text-amber-400">Below Target</span>;
+    }
+    return <span className="text-zinc-400 capitalize">{status}</span>;
+  };
 
   return (
     <motion.div
@@ -85,103 +82,140 @@ export const HistoryPage: React.FC = () => {
         <div>
           <div className="inline-flex items-center gap-2 rounded-md bg-white/5 border border-white/10 px-3 py-1 text-xs text-emerald-400 mb-2">
             <History className="h-3.5 w-3.5" />
-            <span>Audit Trail & Historical Execution Logs</span>
+            <span>Audit Trail &amp; Historical Execution Logs</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
             Compression Run History
           </h1>
           <p className="text-xs text-zinc-400 mt-1">
-            Complete audit archive of all context compression requests executed across enterprise LLM pipelines.
+            Complete audit archive of all context compression requests executed.
           </p>
         </div>
 
-        <button
-          onClick={() => alert('Exporting audit log CSV...')}
-          className="flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-900 px-4 py-2.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-white transition-all font-mono"
-        >
-          <Download className="h-4 w-4 text-emerald-400" />
-          <span>Export Audit Log (CSV)</span>
-        </button>
+        {runs.length > 0 && (
+          <button
+            onClick={() => {
+              const csv = [
+                ['id', 'created_at', 'original_tokens', 'compressed_tokens', 'compression_ratio', 'cost_saved', 'status'].join(','),
+                ...runs.map((r) =>
+                  [r.id, r.created_at, r.original_token_count, r.compressed_token_count, r.compression_ratio, r.cost_saved, r.status].join(',')
+                ),
+              ].join('\n');
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'compression-history.csv';
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-900 px-4 py-2.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-white transition-all font-mono"
+          >
+            <Download className="h-4 w-4 text-emerald-400" />
+            <span>Export CSV</span>
+          </button>
+        )}
       </div>
 
-      {/* Table Filter Controls */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 font-mono text-xs">
-        <div className="relative w-full sm:w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Filter runs by prompt or model..."
-            className="w-full bg-zinc-950 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-white placeholder-zinc-500 focus:outline-none focus:border-white/30"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          {['all', 'gpt4', 'claude'].map((filter) => (
-            <button
-              key={filter}
-              onClick={() => setSelectedFilter(filter)}
-              className={`px-3 py-1.5 rounded-lg border text-xs transition-all ${
-                selectedFilter === filter
-                  ? 'bg-white text-black font-bold border-white'
-                  : 'bg-zinc-950 text-zinc-400 border-white/10 hover:text-white'
-              }`}
-            >
-              {filter === 'all' ? 'All Models' : filter === 'gpt4' ? 'GPT-4o' : 'Claude 3.5'}
-            </button>
-          ))}
-        </div>
+      {/* Search */}
+      <div className="relative w-full sm:w-80 font-mono text-xs">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Search by ID, status, organisation..."
+          className="w-full bg-zinc-950 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-white placeholder-zinc-500 focus:outline-none focus:border-white/30"
+        />
       </div>
 
-      {/* Table Box */}
-      <div className="rounded-2xl border border-white/10 bg-zinc-950 overflow-hidden font-mono text-xs shadow-2xl">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-white/10 bg-zinc-900/60 text-zinc-400">
-                <th className="p-4">RUN ID</th>
-                <th className="p-4">PROMPT NAME</th>
-                <th className="p-4">MODEL ROUTE</th>
-                <th className="p-4 text-right">RAW TOKENS</th>
-                <th className="p-4 text-right">COMPRESSED</th>
-                <th className="p-4 text-right">SAVINGS</th>
-                <th className="p-4 text-right">LATENCY</th>
-                <th className="p-4 text-center">STATUS</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5 text-zinc-300">
-              {filteredRuns.map((run) => (
-                <tr key={run.id} className="hover:bg-white/[0.03] transition-colors">
-                  <td className="p-4 font-bold text-white">{run.id}</td>
-                  <td className="p-4 text-white font-medium">{run.name}</td>
-                  <td className="p-4">
-                    <span className="px-2 py-0.5 rounded bg-white/10 border border-white/10 text-white">
-                      {run.model}
-                    </span>
-                  </td>
-                  <td className="p-4 text-right text-zinc-400">{run.rawTokens.toLocaleString()}</td>
-                  <td className="p-4 text-right text-emerald-400 font-semibold">
-                    {run.compressedTokens.toLocaleString()}
-                  </td>
-                  <td className="p-4 text-right">
-                    <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
-                      {run.savings}
-                    </span>
-                  </td>
-                  <td className="p-4 text-right text-zinc-400">{run.latency}</td>
-                  <td className="p-4 text-center">
-                    <span className="inline-flex items-center gap-1 text-emerald-400">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Passed</span>
-                    </span>
-                  </td>
+      {/* Loading state */}
+      {isLoading && (
+        <div className="flex items-center justify-center gap-3 py-24 text-zinc-400 text-sm font-mono">
+          <Loader2 className="h-5 w-5 animate-spin text-emerald-400" />
+          <span>Fetching history from Supabase...</span>
+        </div>
+      )}
+
+      {/* Error state */}
+      {!isLoading && error && (
+        <div className="flex items-start gap-3 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-xs text-rose-400 font-mono">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>Failed to load history: {error}</span>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!isLoading && !error && runs.length === 0 && (
+        <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
+          <div className="rounded-full bg-white/5 p-5">
+            <Inbox className="h-10 w-10 text-zinc-500" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-white">No compressions yet</p>
+            <p className="text-xs text-zinc-500 mt-1">
+              Run your first compression from the Upload Studio to see it here.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Table */}
+      {!isLoading && !error && filteredRuns.length > 0 && (
+        <div className="rounded-2xl border border-white/10 bg-zinc-950 overflow-hidden font-mono text-xs shadow-2xl">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-white/10 bg-zinc-900/60 text-zinc-400">
+                  <th className="p-4">ID</th>
+                  <th className="p-4">CREATED AT</th>
+                  <th className="p-4 text-right">ORIGINAL</th>
+                  <th className="p-4 text-right">COMPRESSED</th>
+                  <th className="p-4 text-right">RATIO</th>
+                  <th className="p-4 text-right">COST SAVED</th>
+                  <th className="p-4 text-center">STATUS</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-white/5 text-zinc-300">
+                {filteredRuns.map((run) => (
+                  <tr key={run.id} className="hover:bg-white/[0.03] transition-colors">
+                    <td className="p-4 font-bold text-white font-mono text-[11px]">
+                      {run.id ? run.id.slice(0, 8) + '…' : '—'}
+                    </td>
+                    <td className="p-4 text-zinc-400">
+                      {run.created_at ? formatDate(run.created_at) : '—'}
+                    </td>
+                    <td className="p-4 text-right text-zinc-400">
+                      {run.original_token_count?.toLocaleString() ?? '—'}
+                    </td>
+                    <td className="p-4 text-right text-emerald-400 font-semibold">
+                      {run.compressed_token_count?.toLocaleString() ?? '—'}
+                    </td>
+                    <td className="p-4 text-right">
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+                        {run.compression_ratio != null ? `${run.compression_ratio.toFixed(1)}%` : '—'}
+                      </span>
+                    </td>
+                    <td className="p-4 text-right text-zinc-300">
+                      {run.cost_saved != null ? `$${run.cost_saved.toFixed(5)}` : '—'}
+                    </td>
+                    <td className="p-4 text-center">
+                      {statusBadge(run.status)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* No search results */}
+      {!isLoading && !error && runs.length > 0 && filteredRuns.length === 0 && (
+        <div className="text-center py-12 text-sm text-zinc-500 font-mono">
+          No runs match "<span className="text-white">{searchTerm}</span>"
+        </div>
+      )}
     </motion.div>
   );
 };

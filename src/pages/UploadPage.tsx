@@ -9,39 +9,65 @@ import {
   Terminal, 
   SlidersHorizontal, 
   Sparkles, 
-  Check, 
   RotateCcw,
   ArrowRight,
-  Info,
-  Layers,
-  Copy,
-  Scissors
+  Loader2,
+  AlertTriangle
 } from 'lucide-react';
-import { CompressionMode } from '../types';
+import { CompressionMode, N8nResult } from '../types';
 import { SAMPLE_ORIGINAL_PROMPT } from '../constants/mockData';
 
 export const UploadPage: React.FC = () => {
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<'text' | 'pdf' | 'logs' | 'code'>('text');
-  const [promptText, setPromptText] = useState<string>(SAMPLE_ORIGINAL_PROMPT);
+  const [promptText, setPromptText] = useState<string>('');
   const [selectedMode, setSelectedMode] = useState<CompressionMode>('balanced');
   const [targetRatio, setTargetRatio] = useState<number>(70);
   const [preserveCode, setPreserveCode] = useState(true);
   const [keepErrorLogs, setKeepErrorLogs] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const estimatedTokens = Math.round(promptText.length / 3.8) || 0;
   const targetOutputTokens = Math.floor(estimatedTokens * (1 - targetRatio / 100));
 
-  const handleStartCompression = () => {
-    navigate('/dashboard/processing', {
-      state: {
-        mode: selectedMode,
-        ratio: targetRatio,
-        prompt: promptText,
-        options: { preserveCode, keepErrorLogs }
+  const handleStartCompression = async () => {
+    if (!promptText.trim()) {
+      setError('Please enter some text to compress.');
+      return;
+    }
+
+    const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_URL;
+    if (!webhookUrl) {
+      setError('n8n webhook URL is not configured. Please set VITE_N8N_WEBHOOK_URL in .env');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: promptText }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Webhook returned HTTP ${res.status}: ${res.statusText}`);
       }
-    });
+
+      const result: N8nResult = await res.json();
+
+      navigate('/dashboard/processing', {
+        state: { result, isLoading: false },
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(`Compression failed: ${message}`);
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -74,6 +100,18 @@ export const UploadPage: React.FC = () => {
         </button>
       </div>
 
+      {/* Error Banner */}
+      {error && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-start gap-3 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-xs text-rose-400"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </motion.div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* Left Column (2 Cols): Text Area & Format Selector */}
@@ -92,7 +130,7 @@ export const UploadPage: React.FC = () => {
                 return (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
+                    onClick={() => setActiveTab(tab.id as 'text' | 'pdf' | 'logs' | 'code')}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all ${
                       activeTab === tab.id
                         ? 'bg-white text-black font-bold shadow-md'
@@ -220,11 +258,21 @@ export const UploadPage: React.FC = () => {
             {/* Action CTA Button */}
             <button
               onClick={handleStartCompression}
-              className="w-full py-3.5 rounded-xl bg-white text-black font-semibold text-xs hover:bg-zinc-200 transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.15)]"
+              disabled={isLoading}
+              className="w-full py-3.5 rounded-xl bg-white text-black font-semibold text-xs hover:bg-zinc-200 transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.15)] disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <Zap className="w-4 h-4 text-black fill-current" />
-              <span>Execute Context Compression</span>
-              <ArrowRight className="w-4 h-4 text-black" />
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Compressing...</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="w-4 h-4 text-black fill-current" />
+                  <span>Execute Context Compression</span>
+                  <ArrowRight className="w-4 h-4 text-black" />
+                </>
+              )}
             </button>
 
           </div>

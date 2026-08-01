@@ -1,3 +1,20 @@
+/** Shape of the Supabase row returned by n8n webhook after compression */
+export interface N8nResult {
+  id: string;
+  organisation: string;
+  original_text: string;
+  compressed_text: string;
+  original_token_count: number;
+  compressed_token_count: number;
+  compression_ratio: number;
+  cost_saved: number;
+  reasoning_retention_score: number | null;
+  latency_original_ms: number | null;
+  latency_compressed_ms: number | null;
+  status: 'completed' | 'input_too_short' | 'below_target' | string;
+  created_at: string;
+}
+
 export type CompressionMode = 'speed' | 'balanced' | 'accuracy';
 
 export interface CompressionOptions {
