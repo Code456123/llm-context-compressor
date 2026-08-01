@@ -1,95 +1,171 @@
-import React from 'react';
-import { motion } from 'framer-motion';
-import { UploadCloud, Search, Zap, CheckCircle2, Rocket } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { BrainCircuit, Eye, GitBranch, Rocket } from 'lucide-react';
+
+type WorkflowStep = {
+  id: number;
+  title: string;
+  detail: string;
+  description: string;
+  bars: { label: string; value: number; status: string }[];
+  icon: React.ComponentType<{ className?: string }>;
+};
+
+const STEPS: WorkflowStep[] = [
+  {
+    id: 1,
+    title: 'You describe the idea',
+    detail: 'Define business goal and target model behavior in one prompt.',
+    description: 'You submit your large context payload and desired compression goal.',
+    bars: [
+      { label: 'Context ingest', value: 92, status: 'running' },
+      { label: 'Schema detection', value: 68, status: 'running' },
+      { label: 'Risk guardrails', value: 53, status: 'queued' },
+    ],
+    icon: BrainCircuit,
+  },
+  {
+    id: 2,
+    title: 'Agents mobilize in parallel',
+    detail: 'Specialized workers parse code, docs, logs, and semantics together.',
+    description: 'Independent pipelines split work in parallel for faster throughput.',
+    bars: [
+      { label: 'Structure parser', value: 84, status: 'running' },
+      { label: 'Entropy ranker', value: 61, status: 'running' },
+      { label: 'Duplication pruner', value: 44, status: 'queued' },
+    ],
+    icon: GitBranch,
+  },
+  {
+    id: 3,
+    title: 'You review in real-time',
+    detail: 'Live telemetry explains what was removed and what was preserved.',
+    description: 'Transparent scoring shows reduction decisions before final output.',
+    bars: [
+      { label: 'Retention score', value: 88, status: 'running' },
+      { label: 'Cost preview', value: 73, status: 'running' },
+      { label: 'Diff confidence', value: 57, status: 'queued' },
+    ],
+    icon: Eye,
+  },
+  {
+    id: 4,
+    title: 'Optimized context ships',
+    detail: 'Dense, validated context reaches your model endpoint.',
+    description: 'Final payload is compressed for budget and preserved for reasoning.',
+    bars: [
+      { label: 'Compression output', value: 95, status: 'running' },
+      { label: 'Integrity checks', value: 82, status: 'running' },
+      { label: 'Endpoint push', value: 66, status: 'waiting' },
+    ],
+    icon: Rocket,
+  },
+];
 
 export const TimelineSection: React.FC = () => {
-  const steps = [
-    {
-      number: '01',
-      title: 'Upload',
-      subtitle: 'Context Ingestion',
-      icon: UploadCloud,
-      desc: 'Connect your raw prompt payloads, multi-page PDFs, database dumps, or real-time agent context streams via SDK or REST API.',
-    },
-    {
-      number: '02',
-      title: 'Analyze',
-      subtitle: 'AST & Entropy Scoring',
-      icon: Search,
-      desc: 'Parses code trees, stack traces, and natural language blocks using cross-attention entropy scoring to map critical intent.',
-    },
-    {
-      number: '03',
-      title: 'Compress',
-      subtitle: 'Budget Enforcement',
-      icon: Zap,
-      desc: 'Prunes redundant log noise and duplicate text headers while fitting context into your specified target token budget.',
-    },
-    {
-      number: '04',
-      title: 'Validate',
-      subtitle: 'Accuracy Verification',
-      icon: CheckCircle2,
-      desc: 'Verifies semantic integrity and ensures zero reasoning loss before passing context forward.',
-    },
-    {
-      number: '05',
-      title: 'Deploy',
-      subtitle: 'Sub-50ms Streaming',
-      icon: Rocket,
-      desc: 'Streams optimized, high-density context directly to OpenAI, Anthropic, or custom inference clusters.',
-    },
-  ];
+  const [activeStep, setActiveStep] = useState(1);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveStep((prev) => (prev % STEPS.length) + 1);
+    }, 3200);
+    return () => clearInterval(interval);
+  }, []);
+
+  const activeData = STEPS.find((step) => step.id === activeStep) ?? STEPS[0];
+  const ActiveIcon = activeData.icon;
 
   return (
-    <section className="relative py-28 px-6 max-w-7xl mx-auto border-t border-white/5">
-      <div className="text-center max-w-2xl mx-auto mb-20 space-y-3">
-        <span className="text-xs font-mono uppercase tracking-widest text-zinc-500">WORKFLOW</span>
-        <h2 className="text-3xl sm:text-5xl font-bold tracking-tight text-white">
-          How ContextFlow Works
+    <section className="relative py-24 px-6 max-w-7xl mx-auto border-t border-white/5">
+      <div className="max-w-3xl mb-14 space-y-4">
+        <div className="flex items-center gap-3 text-xs font-mono uppercase tracking-[0.16em] text-cyan-200/80">
+          <span className="h-px w-8 bg-cyan-300/70" />
+          How It Works
+        </div>
+        <h2 className="text-4xl sm:text-6xl font-bold tracking-tight leading-[1.02]">
+          <span className="text-white">From idea to live</span>
+          <br />
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-teal-200 to-blue-300">
+            in four moves.
+          </span>
         </h2>
-        <p className="text-zinc-400 text-base">
-          An enterprise end-to-end compression workflow designed for zero developer friction.
-        </p>
       </div>
 
-      <div className="relative max-w-4xl mx-auto">
-        {/* Vertical line fill on scroll */}
-        <div className="absolute left-6 top-6 bottom-6 w-[2px] bg-zinc-800 hidden sm:block" />
-
-        <div className="space-y-8">
-          {steps.map((step, idx) => {
-            const Icon = step.icon;
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+        <div className="space-y-3">
+          {STEPS.map((step) => {
+            const selected = step.id === activeStep;
             return (
-              <motion.div
-                key={idx}
-                initial={{ opacity: 0, x: -20 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true, margin: '-60px' }}
-                transition={{ duration: 0.6, delay: idx * 0.1 }}
-                className="flex items-start gap-6 group"
+              <motion.button
+                key={step.id}
+                type="button"
+                onMouseEnter={() => setActiveStep(step.id)}
+                onClick={() => setActiveStep(step.id)}
+                whileHover={{ y: -1 }}
+                className={`w-full rounded-2xl border px-5 py-5 text-left transition-all ${
+                  selected
+                    ? 'border-cyan-300/40 bg-cyan-500/[0.08]'
+                    : 'border-white/10 bg-slate-950/40 hover:border-cyan-300/25'
+                }`}
               >
-                {/* Node marker */}
-                <div className="w-12 h-12 rounded-2xl bg-zinc-950 border border-white/10 group-hover:border-white/40 group-hover:bg-zinc-900 transition-all flex items-center justify-center text-white shrink-0 relative z-10 shadow-lg">
-                  <Icon className="w-5 h-5 text-zinc-300 group-hover:text-white transition-colors" />
-                </div>
-
-                {/* Content card */}
-                <div className="flex-1 p-6 rounded-2xl border border-white/10 bg-zinc-950/70 hover:bg-zinc-900/60 hover:border-white/20 transition-all duration-300">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-3">
-                      <h3 className="text-lg font-semibold text-white">{step.title}</h3>
-                      <span className="text-xs font-mono px-2.5 py-0.5 rounded-full border border-white/10 bg-white/[0.03] text-zinc-400">
-                        {step.subtitle}
-                      </span>
-                    </div>
-                    <span className="text-xs font-mono text-zinc-600 font-bold">{step.number}</span>
+                <div className="flex items-start gap-4">
+                  <span className={`text-sm font-mono ${selected ? 'text-cyan-200' : 'text-zinc-500'}`}>
+                    0{step.id}
+                  </span>
+                  <div>
+                    <p className={`text-2xl font-semibold tracking-tight ${selected ? 'text-white' : 'text-zinc-300'}`}>
+                      {step.title}
+                    </p>
+                    <p className={`mt-2 text-sm ${selected ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                      {step.detail}
+                    </p>
                   </div>
-                  <p className="text-zinc-400 text-sm leading-relaxed">{step.desc}</p>
                 </div>
-              </motion.div>
+              </motion.button>
             );
           })}
+        </div>
+
+        <div className="rounded-3xl border border-cyan-300/25 bg-[linear-gradient(165deg,rgba(8,18,34,0.8)_0%,rgba(7,28,45,0.65)_100%)] backdrop-blur-xl p-7 shadow-[inset_0_1px_0_rgba(125,211,252,0.08),0_16px_50px_rgba(2,8,20,0.45)]">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeData.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.35 }}
+              className="space-y-6"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-5xl font-bold text-cyan-300">0{activeData.id}</span>
+                <span className="rounded-xl border border-cyan-300/30 bg-cyan-300/10 p-2">
+                  <ActiveIcon className="h-5 w-5 text-cyan-200" />
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-3xl font-semibold tracking-tight text-white">{activeData.title}</h3>
+                <p className="text-zinc-300 leading-relaxed">{activeData.description}</p>
+              </div>
+
+              <div className="space-y-3">
+                {activeData.bars.map((bar) => (
+                  <div key={bar.label} className="grid grid-cols-[140px_1fr_64px] items-center gap-3">
+                    <span className="text-[11px] font-mono text-zinc-400">{bar.label}</span>
+                    <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                      <motion.div
+                        initial={{ width: '0%' }}
+                        animate={{ width: `${bar.value}%` }}
+                        transition={{ duration: 0.7, ease: 'easeOut' }}
+                        className="h-full rounded-full bg-gradient-to-r from-cyan-300 via-teal-300 to-blue-400"
+                      />
+                    </div>
+                    <span className="text-[11px] font-mono text-zinc-500">{bar.status}</span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </AnimatePresence>
         </div>
       </div>
     </section>

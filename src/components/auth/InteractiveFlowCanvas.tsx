@@ -1,172 +1,294 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, Scissors, BarChart3, Zap, CheckCircle2, ArrowRight, RefreshCw, Cpu } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { BrainCircuit, Database, Layers, Sparkles } from 'lucide-react';
+import { CountUp } from '../ui/CountUp';
+
+type CompressionStage = {
+  id: number;
+  title: string;
+  shortLabel: string;
+  summary: string;
+  tooltip: string;
+  inputTokens: number;
+  outputTokens: number;
+  density: number;
+  icon: React.ComponentType<{ className?: string }>;
+};
+
+const STAGES: CompressionStage[] = [
+  {
+    id: 0,
+    title: 'Raw Context Intake',
+    shortLabel: 'Ingress',
+    summary: 'High-volume logs, traces, docs',
+    tooltip: 'Ingress stream with maximum entropy and minimum compression.',
+    inputTokens: 108400,
+    outputTokens: 84500,
+    density: 1.2,
+    icon: Database,
+  },
+  {
+    id: 1,
+    title: 'Semantic Chunking',
+    shortLabel: 'Chunk',
+    summary: 'Intent-preserving boundary merge',
+    tooltip: 'Redundant regions are merged while preserving intent boundaries.',
+    inputTokens: 84500,
+    outputTokens: 58400,
+    density: 2.1,
+    icon: Layers,
+  },
+  {
+    id: 2,
+    title: 'Priority Compression',
+    shortLabel: 'Score',
+    summary: 'Signal scoring and pruning',
+    tooltip: 'Lower-value token clusters are pruned after relevance scoring.',
+    inputTokens: 58400,
+    outputTokens: 39200,
+    density: 3.4,
+    icon: BrainCircuit,
+  },
+  {
+    id: 3,
+    title: 'Dense Context Output',
+    shortLabel: 'Dense',
+    summary: 'High-density reasoning packets',
+    tooltip: 'Compressed context is emitted as dense, model-ready packets.',
+    inputTokens: 39200,
+    outputTokens: 29800,
+    density: 4.8,
+    icon: Sparkles,
+  },
+];
 
 export const InteractiveFlowCanvas: React.FC = () => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [activeStage, setActiveStage] = useState(0);
-  const [hoveredNode, setHoveredNode] = useState<number | null>(null);
+  const [hoveredStage, setHoveredStage] = useState<number | null>(null);
+  const [replayNonce, setReplayNonce] = useState(0);
+  const [rippleStage, setRippleStage] = useState<{ id: number; key: number } | null>(null);
 
-  const stages = [
-    {
-      id: 0,
-      title: 'Raw Context Ingest',
-      tokens: '108,400 Tokens',
-      icon: FileText,
-      color: 'from-red-500/20 to-red-500/5',
-      borderColor: 'border-red-500/30',
-      badgeColor: 'text-red-400 bg-red-500/10',
-      desc: 'Un-pruned enterprise stack traces, SEC filings & multi-modal payloads.',
-    },
-    {
-      id: 1,
-      title: 'AST Syntax Tree Parsing',
-      tokens: '1,420 AST Chunks',
-      icon: Scissors,
-      color: 'from-yellow-500/20 to-yellow-500/5',
-      borderColor: 'border-yellow-500/30',
-      badgeColor: 'text-yellow-400 bg-yellow-500/10',
-      desc: 'Splits raw text into AST syntax blocks, preserving critical code logic.',
-    },
-    {
-      id: 2,
-      title: 'Entropy Importance Ranking',
-      tokens: 'Entropy Score 0.94',
-      icon: BarChart3,
-      color: 'from-blue-500/20 to-blue-500/5',
-      borderColor: 'border-blue-500/30',
-      badgeColor: 'text-blue-400 bg-blue-500/10',
-      desc: 'Cross-attention entropy scores information density per token.',
-    },
-    {
-      id: 3,
-      title: 'Dense Intelligence Output',
-      tokens: '29,800 Tokens (-72%)',
-      icon: Zap,
-      color: 'from-emerald-500/20 to-emerald-500/5',
-      borderColor: 'border-emerald-500/30',
-      badgeColor: 'text-emerald-400 bg-emerald-500/10',
-      desc: 'High-density context streamed directly to GPT-4o, Claude 3.5 & Gemini.',
-    },
-  ];
+  const focusedStage = hoveredStage ?? activeStage;
 
-  // Auto progression interval
   useEffect(() => {
     const interval = setInterval(() => {
-      setActiveStage((prev) => (prev + 1) % stages.length);
-    }, 2800);
+      setActiveStage((prev) => (prev + 1) % STAGES.length);
+    }, 3000);
     return () => clearInterval(interval);
-  }, [stages.length]);
+  }, []);
+
+  useEffect(() => {
+    if (!rippleStage) {
+      return;
+    }
+    const timeout = setTimeout(() => setRippleStage(null), 700);
+    return () => clearTimeout(timeout);
+  }, [rippleStage]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+    const context = canvas.getContext('2d');
+    if (!context) {
+      return;
+    }
+
+    const parent = canvas.parentElement;
+    if (!parent) {
+      return;
+    }
+
+    let frameId = 0;
+    let replayPulse = 0;
+    const particleCount = 84;
+    const particles = Array.from({ length: particleCount }, (_, index) => ({
+      seed: (index * 0.37) % 1,
+      speed: 0.82 + (index % 9) * 0.05,
+      lane: index % 6,
+      hueShift: index % 7,
+    }));
+    const dropRatios = [1, 1.5, 2.4, 3.2];
+
+    const resize = () => {
+      const width = parent.clientWidth;
+      const height = parent.clientHeight;
+      canvas.width = width;
+      canvas.height = height;
+    };
+    resize();
+
+    const observer = new ResizeObserver(resize);
+    observer.observe(parent);
+
+    const draw = (time: number) => {
+      const width = canvas.width;
+      const height = canvas.height;
+      const progressLimit = (activeStage + 1) / STAGES.length;
+      replayPulse = Math.max(0, replayPulse - 0.012);
+
+      context.clearRect(0, 0, width, height);
+      const backdrop = context.createLinearGradient(0, 0, width, height);
+      backdrop.addColorStop(0, 'rgba(6, 12, 25, 0.86)');
+      backdrop.addColorStop(1, 'rgba(18, 8, 35, 0.8)');
+      context.fillStyle = backdrop;
+      context.fillRect(0, 0, width, height);
+
+      const left = 28;
+      const right = width - 28;
+      const centerY = height * 0.56;
+
+      for (const particle of particles) {
+        const phase = ((time * 0.000065 * particle.speed) + particle.seed + replayPulse * 0.2) % 1;
+        const stageIndex = Math.min(STAGES.length - 1, Math.floor(phase * STAGES.length));
+        const gate = Math.ceil(dropRatios[stageIndex]);
+        const isKept = (particle.lane + stageIndex + particle.hueShift) % gate === 0;
+
+        const travel = Math.sin((phase * Math.PI) / 2);
+        const x = left + (right - left) * travel;
+        const spread = (1 - travel) * height * 0.24 + height * 0.03;
+        const oscillation = Math.sin((phase * 24) + (particle.lane * 1.8) + (time * 0.0012)) * spread;
+        const y = centerY + oscillation;
+        const radius = 1.2 + travel * 3.3;
+
+        let alpha = isKept ? 0.86 : 0.24;
+        if (phase > progressLimit) {
+          alpha *= 0.2;
+        }
+
+        const hue = 186 + travel * 74 + particle.hueShift;
+        context.fillStyle = `hsla(${hue}, 88%, ${isKept ? 66 : 52}%, ${alpha})`;
+        context.shadowColor = `hsla(${hue}, 98%, 65%, ${alpha})`;
+        context.shadowBlur = isKept ? 14 : 8;
+        context.beginPath();
+        context.arc(x, y, radius, 0, Math.PI * 2);
+        context.fill();
+      }
+
+      context.shadowBlur = 0;
+      for (let index = 0; index < STAGES.length; index += 1) {
+        const markerX = left + ((right - left) * index) / (STAGES.length - 1);
+        const markerActive = index <= activeStage;
+        context.fillStyle = markerActive ? 'rgba(96, 241, 255, 0.92)' : 'rgba(166, 193, 255, 0.3)';
+        context.beginPath();
+        context.arc(markerX, centerY, markerActive ? 4.2 : 3.1, 0, Math.PI * 2);
+        context.fill();
+      }
+
+      frameId = requestAnimationFrame(draw);
+    };
+
+    frameId = requestAnimationFrame(draw);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      observer.disconnect();
+    };
+  }, [activeStage, replayNonce]);
+
+  const totalReduction = useMemo(() => {
+    const first = STAGES[0].inputTokens;
+    const last = STAGES[STAGES.length - 1].outputTokens;
+    return Math.round(((first - last) / first) * 100);
+  }, []);
+
+  const handleStageClick = (stageIndex: number) => {
+    setActiveStage(stageIndex);
+    setReplayNonce((prev) => prev + 1);
+    setRippleStage({ id: stageIndex, key: Date.now() });
+  };
 
   return (
-    <div className="relative w-full max-w-lg mx-auto font-sans">
-      {/* Background Glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-white/[0.02] rounded-full blur-[120px] pointer-events-none" />
+    <div className="relative w-full max-w-xl mx-auto font-sans">
+      <div className="absolute inset-[-10%] -z-10 rounded-[30px] bg-[radial-gradient(circle_at_25%_25%,rgba(56,189,248,0.22),transparent_42%),radial-gradient(circle_at_85%_20%,rgba(139,92,246,0.24),transparent_45%),radial-gradient(circle_at_50%_95%,rgba(6,182,212,0.17),transparent_42%)] blur-3xl" />
+      <div className="relative rounded-3xl border border-cyan-300/25 bg-slate-950/65 p-4 sm:p-6 shadow-[0_0_55px_rgba(29,78,216,0.25)] backdrop-blur-2xl">
+        <div className="relative h-[260px] sm:h-[300px] overflow-hidden rounded-2xl border border-white/10 bg-slate-950/45">
+          <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
 
-      {/* Main Flow Container */}
-      <div className="relative z-10 rounded-2xl border border-white/15 bg-zinc-950/90 p-6 sm:p-8 shadow-2xl backdrop-blur-xl space-y-6">
-        
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/10 pb-4 font-mono text-xs">
-          <div className="flex items-center gap-2.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-white font-semibold">Interactive ContextFlow Pipeline</span>
+          <div className="absolute left-3 top-3 rounded-xl border border-white/10 bg-slate-950/78 px-3 py-2 text-[11px] font-mono text-white shadow-lg backdrop-blur-xl">
+            <p className="font-semibold tracking-wide text-cyan-200">Context Compression Stream</p>
+            <p className="mt-1 text-slate-300">
+              <span className="text-cyan-300">108,400</span> →{' '}
+              <span className="text-violet-300">29,800</span> tokens ({totalReduction}% reduction)
+            </p>
           </div>
-          <span className="text-[10px] text-zinc-400">Click node to inspect</span>
+
+          <div className="absolute right-3 top-3 rounded-lg border border-white/10 bg-slate-950/78 px-2.5 py-1 text-[10px] font-mono text-slate-300">
+            60 FPS pipeline render
+          </div>
         </div>
 
-        {/* Step Flow List */}
-        <div className="space-y-3 relative">
-          {stages.map((stage, idx) => {
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {STAGES.map((stage, stageIndex) => {
             const Icon = stage.icon;
-            const isActive = activeStage === idx || hoveredNode === idx;
-            const isCompleted = idx < activeStage;
+            const isFocused = stageIndex === focusedStage;
+            const isActive = stageIndex === activeStage;
 
             return (
-              <div key={stage.id} className="relative">
-                {/* Node Box */}
-                <motion.div
-                  onClick={() => setActiveStage(idx)}
-                  onMouseEnter={() => setHoveredNode(idx)}
-                  onMouseLeave={() => setHoveredNode(null)}
-                  whileHover={{ scale: 1.02 }}
-                  className={`p-4 rounded-xl border transition-all duration-300 cursor-pointer relative overflow-hidden ${
-                    isActive
-                      ? `bg-gradient-to-r ${stage.color} ${stage.borderColor} shadow-[0_0_20px_rgba(255,255,255,0.08)]`
-                      : isCompleted
-                      ? 'bg-zinc-900/60 border-white/10 text-zinc-300'
-                      : 'bg-zinc-950 border-white/5 text-zinc-500'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${
-                          isActive
-                            ? 'bg-white text-black font-bold'
-                            : 'bg-white/5 text-zinc-400'
-                        }`}
-                      >
-                        <Icon className="w-4.5 h-4.5" />
-                      </div>
-                      <div>
-                        <h4 className={`text-xs font-semibold ${isActive ? 'text-white' : 'text-zinc-300'}`}>
-                          {stage.title}
-                        </h4>
-                        <p className="text-[11px] text-zinc-400 mt-0.5 font-sans leading-tight">
-                          {stage.desc}
-                        </p>
-                      </div>
-                    </div>
-
-                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${stage.badgeColor} shrink-0`}>
-                      {stage.tokens}
-                    </span>
-                  </div>
-
-                  {/* Active Animated Beam Line at bottom of active stage */}
-                  {isActive && (
-                    <motion.div
-                      layoutId="flowPulseLine"
-                      className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-white to-transparent"
+              <motion.button
+                key={stage.id}
+                type="button"
+                onClick={() => handleStageClick(stageIndex)}
+                onMouseEnter={() => setHoveredStage(stageIndex)}
+                onMouseLeave={() => setHoveredStage(null)}
+                whileHover={{ y: -2, scale: 1.04 }}
+                whileTap={{ scale: 0.97 }}
+                className={`relative overflow-hidden rounded-xl border px-3 py-2 text-left transition-colors ${
+                  isFocused ? 'border-cyan-300/50 bg-slate-900/80' : 'border-white/10 bg-slate-950/60'
+                }`}
+              >
+                <AnimatePresence>
+                  {rippleStage && rippleStage.id === stage.id && (
+                    <motion.span
+                      key={rippleStage.key}
+                      initial={{ opacity: 0.4, scale: 0 }}
+                      animate={{ opacity: 0, scale: 2.8 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.6, ease: 'easeOut' }}
+                      className="pointer-events-none absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-200/35 bg-cyan-300/20"
                     />
                   )}
-                </motion.div>
-
-                {/* Animated Connecting Arrow Beam */}
-                {idx < stages.length - 1 && (
-                  <div className="h-4 flex items-center justify-center my-1">
-                    <div className="w-[1px] h-full bg-zinc-800 relative overflow-hidden">
-                      {idx <= activeStage && (
-                        <motion.div
-                          animate={{ y: ['-100%', '100%'] }}
-                          transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
-                          className="w-full h-full bg-emerald-400"
-                        />
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+                </AnimatePresence>
+                <div className="relative z-10 flex items-center gap-2">
+                  <span className={`rounded-lg border p-1.5 ${isFocused ? 'border-cyan-200/45 bg-cyan-300/15' : 'border-white/10 bg-white/5'}`}>
+                    <Icon className="h-3.5 w-3.5 text-cyan-200" />
+                  </span>
+                  <span className={`text-[10px] font-mono ${isActive ? 'text-cyan-100' : 'text-slate-300'}`}>
+                    {stage.shortLabel}
+                  </span>
+                </div>
+              </motion.button>
             );
           })}
         </div>
 
-        {/* Dynamic Stage Telemetry Footer */}
         <AnimatePresence mode="wait">
           <motion.div
-            key={activeStage}
-            initial={{ opacity: 0, y: 10 }}
+            key={`${focusedStage}-${replayNonce}`}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="p-3 rounded-xl border border-white/10 bg-zinc-900/60 font-mono text-[11px] flex items-center justify-between text-zinc-400"
+            exit={{ opacity: 0, y: -8 }}
+            className="mt-3 rounded-xl border border-cyan-300/25 bg-slate-950/80 px-3 py-2 shadow-lg backdrop-blur-xl"
           >
-            <span>ACTIVE STAGE: 0{activeStage + 1}</span>
-            <span className="text-emerald-400 font-semibold flex items-center gap-1">
-              <Cpu className="w-3.5 h-3.5" /> 98.9% Retention SLA
-            </span>
+            <p className="text-[10px] font-mono text-cyan-100">
+              {STAGES[focusedStage].title}: <span className="text-slate-100">{STAGES[focusedStage].tooltip}</span>
+            </p>
+            <div className="mt-2 flex items-center gap-2 text-[10px] font-mono text-slate-200">
+              <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5">
+                IN <CountUp key={`in-${focusedStage}-${replayNonce}`} end={STAGES[focusedStage].inputTokens} duration={0.65} />
+              </span>
+              <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5">
+                OUT <CountUp key={`out-${focusedStage}-${replayNonce}`} end={STAGES[focusedStage].outputTokens} duration={0.65} />
+              </span>
+              <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5">
+                DENSITY <CountUp key={`density-${focusedStage}-${replayNonce}`} end={STAGES[focusedStage].density} duration={0.65} decimals={1} suffix="x" />
+              </span>
+            </div>
+            <p className="mt-2 text-[10px] text-slate-300">{STAGES[focusedStage].summary}</p>
           </motion.div>
         </AnimatePresence>
-
       </div>
     </div>
   );

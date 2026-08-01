@@ -1,6 +1,5 @@
 import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ParticleBackground } from '../components/effects/ParticleBackground';
 import { LandingNavbar } from '../components/landing/LandingNavbar';
 import { HeroSection } from '../components/landing/HeroSection';
 import { ProblemSection } from '../components/landing/ProblemSection';
@@ -9,6 +8,7 @@ import { LiveCompressionDemo } from '../components/landing/LiveCompressionDemo';
 import { MetricsSection } from '../components/landing/MetricsSection';
 import { TimelineSection } from '../components/landing/TimelineSection';
 import { DashboardPreviewSection } from '../components/landing/DashboardPreviewSection';
+import { PricingSection } from '../components/landing/PricingSection';
 import { FooterSection } from '../components/landing/FooterSection';
 
 export const LandingPage: React.FC = () => {
@@ -30,10 +30,7 @@ export const LandingPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#08090A] text-white selection:bg-white selection:text-black relative overflow-x-hidden font-sans">
-      {/* Particle Canvas Background */}
-      <ParticleBackground />
-
+    <div className="min-h-screen bg-transparent text-white selection:bg-white selection:text-black relative overflow-x-hidden font-sans pt-16">
       {/* Sticky Blur Navbar */}
       <LandingNavbar />
 
@@ -104,7 +101,17 @@ export const LandingPage: React.FC = () => {
         <DashboardPreviewSection />
       </motion.div>
 
-      {/* Section 8: Footer */}
+      {/* Section 8: Pricing */}
+      <motion.div
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: false, margin: '-60px' }}
+        variants={sectionVariants}
+      >
+        <PricingSection />
+      </motion.div>
+
+      {/* Section 9: Footer */}
       <FooterSection />
     </div>
   );

@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Zap, ArrowRight, Lock, Mail, User, Building2 } from 'lucide-react';
-import { ParticleBackground } from '../components/effects/ParticleBackground';
 import { InteractiveFlowCanvas } from '../components/auth/InteractiveFlowCanvas';
 
 export const SignUpPage: React.FC = () => {
@@ -32,11 +31,7 @@ export const SignUpPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#08090A] text-white flex flex-col justify-center py-12 px-6 relative overflow-hidden font-sans">
-      <ParticleBackground />
-
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[500px] bg-white/[0.02] rounded-full blur-[140px] pointer-events-none" />
-
+    <div className="min-h-screen bg-transparent text-white flex flex-col justify-center py-12 px-6 relative overflow-hidden font-sans">
       <div className="max-w-6xl mx-auto w-full relative z-10">
         
         {/* Top Brand Header */}

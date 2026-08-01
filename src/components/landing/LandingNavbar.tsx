@@ -7,7 +7,7 @@ import { glow, pulse } from '../../animations/variants';
 
 export const LandingNavbar: React.FC = () => {
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-[#08090A]/80 backdrop-blur-xl">
+    <header className="fixed top-0 z-50 w-full border-b border-white/10 bg-[#08090A]/55 backdrop-blur-xl">
       <div className="max-w-7xl mx-auto flex h-16 items-center justify-between px-6">
         <Link to="/" className="flex items-center gap-3 group">
           <motion.div
@@ -21,7 +21,7 @@ export const LandingNavbar: React.FC = () => {
           <motion.span
             variants={pulse}
             animate="animate"
-            className="font-bold text-base tracking-tight text-white flex items-center gap-2"
+            className="font-bold text-base tracking-tight text-white/95 flex items-center gap-2"
           >
             ContextFlow <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-white/10 text-zinc-300 border border-white/10">AI</span>
           </motion.span>
@@ -39,6 +39,9 @@ export const LandingNavbar: React.FC = () => {
           </a>
           <a href="#workflow" className="hover:text-white transition-colors">
             Workflow
+          </a>
+          <a href="#pricing" className="hover:text-white transition-colors">
+            Pricing
           </a>
         </nav>
 

@@ -1,5 +1,18 @@
 import React, { useEffect, useRef } from 'react';
 
+type Particle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  baseVx: number;
+  baseVy: number;
+  size: number;
+  alpha: number;
+  hue: number;
+  mass: number;
+};
+
 export const ParticleBackground: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -10,83 +23,170 @@ export const ParticleBackground: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let animationFrameId: number;
-    let width = (canvas.width = window.innerWidth);
-    let height = (canvas.height = window.innerHeight);
+    let animationFrameId = 0;
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    let particles: Particle[] = [];
+    let mouseX = width / 2;
+    let mouseY = height / 2;
+    let targetMouseX = mouseX;
+    let targetMouseY = mouseY;
+    let lastMoveAt = performance.now();
+    let compressionSeed = Math.random() * 5000;
 
-    let mouseX = 0;
-    let mouseY = 0;
-    let targetMouseX = 0;
-    let targetMouseY = 0;
+    const createParticles = (w: number, h: number) => {
+      const count = Math.max(52, Math.min(Math.floor((w * h) / 17000), 110));
+      return Array.from({ length: count }, () => {
+        const baseSpeed = 0.1 + Math.random() * 0.42;
+        const angle = (Math.random() * Math.PI) / 3 - Math.PI / 8;
+        return {
+          x: Math.random() * w,
+          y: Math.random() * h,
+          vx: Math.cos(angle) * baseSpeed,
+          vy: Math.sin(angle) * baseSpeed,
+          baseVx: Math.cos(angle) * baseSpeed,
+          baseVy: Math.sin(angle) * baseSpeed,
+          size: 0.75 + Math.random() * 2.4,
+          alpha: 0.2 + Math.random() * 0.55,
+          hue: [188, 194, 206, 212, 264][Math.floor(Math.random() * 5)],
+          mass: 0.8 + Math.random() * 1.6,
+        };
+      });
+    };
 
     const handleResize = () => {
-      if (!canvas) return;
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
+      particles = createParticles(width, height);
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      // Small parallax offset +-5px
-      targetMouseX = ((e.clientX / window.innerWidth) - 0.5) * 10;
-      targetMouseY = ((e.clientY / window.innerHeight) - 0.5) * 10;
+      targetMouseX = e.clientX;
+      targetMouseY = e.clientY;
+      lastMoveAt = performance.now();
     };
 
+    const handleTouchMove = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      if (!touch) return;
+      targetMouseX = touch.clientX;
+      targetMouseY = touch.clientY;
+      lastMoveAt = performance.now();
+    };
+
+    handleResize();
     window.addEventListener('resize', handleResize);
     window.addEventListener('mousemove', handleMouseMove);
-
-    // Particle setup
-    const numParticles = Math.min(Math.floor((width * height) / 18000), 65);
-    const particles = Array.from({ length: numParticles }, () => ({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      size: Math.random() * 1.5 + 0.5,
-      speedX: (Math.random() - 0.5) * 0.35,
-      speedY: (Math.random() - 0.5) * 0.35,
-      opacity: Math.random() * 0.4 + 0.1,
-    }));
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
 
     const render = () => {
+      const now = performance.now();
+      const cursorActivity = Math.max(0, 1 - (now - lastMoveAt) / 1800);
+      const compressionPhase = (Math.sin((now + compressionSeed) * 0.00035) + 1) * 0.5;
+      const compressionX = width * (0.18 + compressionPhase * 0.58);
+      const compressionY = height * (0.45 + Math.sin((now + compressionSeed) * 0.0002) * 0.12);
+
+      mouseX += (targetMouseX - mouseX) * 0.12;
+      mouseY += (targetMouseY - mouseY) * 0.12;
+
       ctx.clearRect(0, 0, width, height);
 
-      // Smooth mouse interpolation
-      mouseX += (targetMouseX - mouseX) * 0.05;
-      mouseY += (targetMouseY - mouseY) * 0.05;
+      for (let index = 0; index < particles.length; index += 1) {
+        const particle = particles[index];
+        const dxMouse = particle.x - mouseX;
+        const dyMouse = particle.y - mouseY;
+        const distMouse = Math.sqrt((dxMouse * dxMouse) + (dyMouse * dyMouse));
+        const influenceRadius = 130;
+        if (distMouse < influenceRadius) {
+          const influence = (1 - distMouse / influenceRadius) * cursorActivity;
+          const direction = index % 4 === 0 ? -1 : 1;
+          const normalizedX = distMouse > 0 ? dxMouse / distMouse : 0;
+          const normalizedY = distMouse > 0 ? dyMouse / distMouse : 0;
+          particle.vx += normalizedX * influence * 0.22 * direction;
+          particle.vy += normalizedY * influence * 0.22 * direction;
+        }
 
-      ctx.fillStyle = '#FFFFFF';
+        const cdx = compressionX - particle.x;
+        const cdy = compressionY - particle.y;
+        const compressionDistance = Math.sqrt((cdx * cdx) + (cdy * cdy));
+        if (compressionDistance < 200) {
+          const pull = (1 - compressionDistance / 200) * 0.012;
+          const hubShift = index % 3 === 0 ? -26 : index % 3 === 1 ? 24 : 0;
+          const targetY = compressionY + hubShift;
+          const tx = compressionX - particle.x;
+          const ty = targetY - particle.y;
+          const td = Math.sqrt((tx * tx) + (ty * ty)) || 1;
+          particle.vx += (tx / td) * pull;
+          particle.vy += (ty / td) * pull;
+        }
 
-      particles.forEach((p) => {
-        p.x += p.speedX;
-        p.y += p.speedY;
+        particle.vx += (particle.baseVx - particle.vx) * 0.016;
+        particle.vy += (particle.baseVy - particle.vy) * 0.016;
+        particle.vx *= 0.985;
+        particle.vy *= 0.985;
+        particle.x += particle.vx * particle.mass;
+        particle.y += particle.vy * particle.mass;
 
-        if (p.x < 0) p.x = width;
-        if (p.x > width) p.x = 0;
-        if (p.y < 0) p.y = height;
-        if (p.y > height) p.y = 0;
+        if (particle.x < -8) particle.x = width + 8;
+        if (particle.x > width + 8) particle.x = -8;
+        if (particle.y < -8) particle.y = height + 8;
+        if (particle.y > height + 8) particle.y = -8;
+      }
 
+      for (let i = 0; i < particles.length; i += 1) {
+        const a = particles[i];
+        for (let j = i + 1; j < particles.length; j += 1) {
+          const b = particles[j];
+          const dx = a.x - b.x;
+          const dy = a.y - b.y;
+          const distance = Math.sqrt((dx * dx) + (dy * dy));
+          const maxDistance = 94;
+          if (distance > maxDistance) {
+            continue;
+          }
+          const nearCursor =
+            Math.min(
+              Math.sqrt(((a.x - mouseX) ** 2) + ((a.y - mouseY) ** 2)),
+              Math.sqrt(((b.x - mouseX) ** 2) + ((b.y - mouseY) ** 2))
+            ) < 155;
+          const alphaBoost = nearCursor ? 0.045 * cursorActivity : 0;
+          const alpha = ((1 - distance / maxDistance) * 0.085) + alphaBoost;
+          ctx.strokeStyle = `rgba(94, 234, 212, ${alpha})`;
+          ctx.lineWidth = nearCursor ? 1.05 : 0.65;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+      }
+
+      for (let index = 0; index < particles.length; index += 1) {
+        const particle = particles[index];
+        const isCompressionFocus =
+          Math.sqrt(((particle.x - compressionX) ** 2) + ((particle.y - compressionY) ** 2)) < 110;
+        const brightness = isCompressionFocus ? 68 : 60;
+        const alpha = particle.alpha * (isCompressionFocus ? 1.18 : 1);
+        ctx.fillStyle = `hsla(${particle.hue}, 88%, ${brightness}%, ${alpha})`;
+        ctx.shadowColor = `hsla(${particle.hue}, 96%, 66%, ${alpha})`;
+        ctx.shadowBlur = isCompressionFocus ? 12 : 7;
         ctx.beginPath();
-        ctx.globalAlpha = p.opacity;
-        ctx.arc(p.x + mouseX, p.y + mouseY, p.size, 0, Math.PI * 2);
+        ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
         ctx.fill();
-      });
-
-      // Draw subtle grid lines
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.025)';
-      ctx.lineWidth = 1;
-      const gridSize = 64;
-
-      for (let x = 0; x < width; x += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(x + mouseX * 0.3, 0);
-        ctx.lineTo(x + mouseX * 0.3, height);
-        ctx.stroke();
       }
 
-      for (let y = 0; y < height; y += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(0, y + mouseY * 0.3);
-        ctx.lineTo(width, y + mouseY * 0.3);
-        ctx.stroke();
-      }
+      ctx.shadowBlur = 0;
+      const streamLine = ctx.createLinearGradient(width * 0.08, height * 0.2, width * 0.92, height * 0.8);
+      streamLine.addColorStop(0, 'rgba(56, 189, 248, 0.06)');
+      streamLine.addColorStop(0.5, 'rgba(45, 212, 191, 0.04)');
+      streamLine.addColorStop(1, 'rgba(147, 51, 234, 0.03)');
+      ctx.strokeStyle = streamLine;
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(width * 0.06, height * 0.38);
+      ctx.bezierCurveTo(width * 0.34, height * 0.28, width * 0.66, height * 0.64, width * 0.94, height * 0.52);
+      ctx.stroke();
 
       animationFrameId = requestAnimationFrame(render);
     };
@@ -96,6 +196,7 @@ export const ParticleBackground: React.FC = () => {
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('touchmove', handleTouchMove);
       cancelAnimationFrame(animationFrameId);
     };
   }, []);
