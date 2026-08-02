@@ -173,15 +173,8 @@ Only variables prefixed `VITE_` are bundled into the frontend build; anything el
 
 ## Live Demo
 
-🔗 **[Add your Vercel deployment URL here]**
+🔗 **[https://llm-context-compressor.vercel.app/]**
 
-## Team
-
-| Name | Role |
-|---|---|
-| _Add name_ | _Add role_ |
-| _Add name_ | _Add role_ |
-| _Add name_ | _Add role_ |
 
 ## Built For
 
