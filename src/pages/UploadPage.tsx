@@ -51,19 +51,35 @@ export const UploadPage: React.FC = () => {
       const res = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: promptText }),
+        body: JSON.stringify({ text: promptText, targetRatio }),
       });
 
+      const rawBody = await res.text();
+      console.log('[n8n webhook] status:', res.status, 'body:', rawBody);
+
       if (!res.ok) {
-        throw new Error(`Webhook returned HTTP ${res.status}: ${res.statusText}`);
+        throw new Error(`Webhook returned HTTP ${res.status}: ${res.statusText} — ${rawBody.slice(0, 300)}`);
       }
 
-      const result: N8nResult = await res.json();
+      if (!rawBody) {
+        throw new Error(
+          'n8n returned an empty response body. The workflow likely errored before "Respond to Webhook" ' +
+          '(check the n8n Executions tab for this run — most commonly the Supabase "Save Result" insert failed).'
+        );
+      }
+
+      let result: N8nResult;
+      try {
+        result = JSON.parse(rawBody);
+      } catch {
+        throw new Error(`n8n response was not valid JSON: ${rawBody.slice(0, 300)}`);
+      }
 
       navigate('/dashboard/processing', {
         state: { result, isLoading: false },
       });
     } catch (err: unknown) {
+      console.error('[n8n webhook] compression failed:', err);
       const message = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(`Compression failed: ${message}`);
       setIsLoading(false);

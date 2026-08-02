@@ -94,12 +94,27 @@ export const DashboardPage: React.FC = () => {
       const res = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToProcess }),
+        body: JSON.stringify({ text: textToProcess, targetRatio }),
       });
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      const rawBody = await res.text();
+      console.log('[n8n webhook] status:', res.status, 'body:', rawBody);
 
-      const result: N8nResult = await res.json();
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText} — ${rawBody.slice(0, 300)}`);
+
+      if (!rawBody) {
+        throw new Error(
+          'n8n returned an empty response body. The workflow likely errored before "Respond to Webhook" ' +
+          '(check the n8n Executions tab for this run — most commonly the Supabase "Save Result" insert failed).'
+        );
+      }
+
+      let result: N8nResult;
+      try {
+        result = JSON.parse(rawBody);
+      } catch {
+        throw new Error(`n8n response was not valid JSON: ${rawBody.slice(0, 300)}`);
+      }
       setCompressionResult(result);
 
       // Refresh KPIs after new compression
@@ -116,6 +131,7 @@ export const DashboardPage: React.FC = () => {
         setKpi({ tokensSaved, avgCompressionRatio: avgRatio, totalCostSaved: totalCost, runCount: rows.length });
       }
     } catch (err: unknown) {
+      console.error('[n8n webhook] compression failed:', err);
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setCompressError(`Compression failed: ${msg}`);
     } finally {

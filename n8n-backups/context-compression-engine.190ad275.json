@@ -1,0 +1,805 @@
+{
+  "id": "HG6rCaXrHIDl8THX",
+  "name": "Context Compression Engine",
+  "active": true,
+  "isArchived": false,
+  "versionId": "190ad275-5691-4122-b3c0-63eb9e40e36c",
+  "activeVersionId": "190ad275-5691-4122-b3c0-63eb9e40e36c",
+  "triggerCount": 1,
+  "createdAt": "2026-08-01T08:38:03.180Z",
+  "updatedAt": "2026-08-02T08:00:20.192Z",
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true
+  },
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Chunk Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chunk Text": {
+      "main": [
+        [
+          {
+            "node": "Strip Boilerplate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Chunks": {
+      "main": [
+        [
+          {
+            "node": "Recover Original Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine and Measure": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Retention\"",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Result": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recover Original Text": {
+      "main": [
+        [
+          {
+            "node": "Start Timer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Timer": {
+      "main": [
+        [
+          {
+            "node": "Combine and Measure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Retention Score": {
+      "main": [
+        [
+          {
+            "node": "Save Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Retention\"": {
+      "main": [
+        [
+          {
+            "node": "Parse Retention Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Strip Boilerplate": {
+      "main": [
+        [
+          {
+            "node": "Algorithmic Compress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Algorithmic Compress": {
+      "main": [
+        [
+          {
+            "node": "Summarize Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "compress",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "1c2360f8-8e3b-4bc6-86bf-39798cb66320",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "a2be1071-483a-4f9c-a756-c9e2463ad3b0"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst text = (input.body && input.body.text) || input.text || '';\nconst targetRatio = (input.body && input.body.targetRatio) || input.targetRatio || 70;\n\nconst originalCharCount = text.length;\nconst originalTokenCount = Math.round(originalCharCount / 4);\n\nfunction stripDividers(t) {\n  return t.replace(/^[ \\t]*[-=*_~]{3,}[ \\t]*$/gm, '');\n}\n\nconst FILLER_LINE_RE = [\n  /^thanks( everyone| all| team)?\\.?$/i,\n  /^sounds good\\.?$/i,\n  /^let'?s revisit( next week)?\\.?$/i,\n  /^i'?ll schedule another meeting\\.?$/i,\n  /^great discussion\\.?$/i,\n  /^thank you\\.?$/i,\n];\nfunction stripFillerLines(t) {\n  return t.split('\\n').filter(line => !FILLER_LINE_RE.some(re => re.test(line.trim()))).join('\\n');\n}\n\nfunction looksLikeCode(s) {\n  return /[{};]|=>|\\bfunction\\s|\\bclass\\s|\\bstruct\\s|\\bfor\\s*\\(|\\bwhile\\s*\\(|\\bimport\\s|\\breturn\\s/.test(s);\n}\n\nfunction compactListBlock(paragraph) {\n  if (looksLikeCode(paragraph)) return paragraph;\n  const lines = paragraph.split('\\n').map(l => l.trim()).filter(Boolean);\n  if (lines.length < 3) return paragraph;\n  const allShort = lines.every(l => l.length <= 60 && !/[.!?:]$/.test(l));\n  if (!allShort) return paragraph;\n  return lines.join(', ');\n}\n\nfunction preprocess(t) {\n  let out = stripDividers(t);\n  out = stripFillerLines(out);\n  out = out.replace(/\\n{3,}/g, '\\n\\n');\n  out = out.split(/\\n\\s*\\n/).map(compactListBlock).join('\\n\\n');\n  return out;\n}\n\nconst preprocessed = preprocess(text);\n\nconst MAX = 500;\nconst paragraphs = preprocessed.split(/\\n\\s*\\n/);\nconst chunks = [];\nlet current = '';\n\n// Break priority when a paragraph exceeds MAX: last sentence-ending punctuation within\n// budget (best — never splits mid-sentence), else last newline, else last whitespace,\n// else a hard cut at MAX as an absolute last resort (a single token longer than MAX chars).\nfunction lastSentenceBreak(s, limit) {\n  let best = -1;\n  for (const mark of ['. ', '! ', '? ']) {\n    const idx = s.lastIndexOf(mark, limit);\n    if (idx > best) best = idx + 1; // break right after the punctuation mark\n  }\n  return best;\n}\n\nfunction flushOversized() {\n  while (current.length > MAX) {\n    let breakAt = lastSentenceBreak(current, MAX);\n    if (breakAt <= 0) breakAt = current.lastIndexOf('\\n', MAX);\n    if (breakAt <= 0) breakAt = current.lastIndexOf(' ', MAX);\n    if (breakAt <= 0) breakAt = MAX;\n    chunks.push(current.slice(0, breakAt));\n    current = current.slice(breakAt).replace(/^[\\n ]+/, '');\n  }\n}\n\nfor (const para of paragraphs) {\n  const candidate = current ? current + '\\n\\n' + para : para;\n  if (candidate.length > MAX && current.length > 0) {\n    chunks.push(current);\n    current = para;\n  } else {\n    current = candidate;\n  }\n  flushOversized();\n}\nif (current.trim().length > 0) chunks.push(current);\nif (chunks.length === 0) chunks.push(preprocessed);\n\nreturn chunks.map((c, i) => ({\n  json: {\n    chunk: c,\n    chunk_index: i,\n    original_char_count: originalCharCount,\n    original_token_count: originalTokenCount,\n    original_text: text,\n    target_ratio: targetRatio,\n  },\n}));\n"
+      },
+      "id": "f1aea03e-279d-4945-b72e-383e0be5bb2d",
+      "name": "Chunk Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst STOPWORDS = new Set(['the','a','an','and','or','but','of','to','in','on','for','with','is','are','was','were','be','been','being','this','that','these','those','it','as','at','by','from','has','have','had','will','would','could','should','can','may','might','not','no','so','if','then','than','also','into','about','over','under','more','most','some','such','only','very']);\nconst WORD_NUM = { zero:'0', one:'1', two:'2', three:'3', four:'4', five:'5', six:'6', seven:'7', eight:'8', nine:'9', ten:'10' };\nconst UNIT_NORM = { milliseconds:'ms', millisecond:'ms', ms:'ms', seconds:'s', second:'s' };\n\nfunction normalizeToken(w) {\n  const lw = w.toLowerCase();\n  if (WORD_NUM[lw]) return WORD_NUM[lw];\n  if (UNIT_NORM[lw]) return UNIT_NORM[lw];\n  return lw;\n}\n\nfunction contentSignature(sent) {\n  const words = (sent.match(/\\b[\\w.]+\\b/g) || []).map(normalizeToken);\n  return new Set(words.filter(w => !STOPWORDS.has(w) && w.length > 1));\n}\n\nfunction jaccard(setA, setB) {\n  if (setA.size === 0 || setB.size === 0) return 0;\n  let inter = 0;\n  for (const w of setA) if (setB.has(w)) inter++;\n  return inter / (setA.size + setB.size - inter);\n}\n\nreturn items.map(item => {\n  let text = item.json.cleaned_chunk || item.json.chunk || item.json.text || '';\n\n  let sentences = text.split(/(?<=[.!?])\\s+/).map(s => s.trim()).filter(Boolean);\n\n  // Pass 1: near-literal dedup (existing) — catches repeated sentences with only\n  // filler-phrase or punctuation differences.\n  const seenCore = new Set();\n  const pass1 = [];\n  for (const sent of sentences) {\n    const normalized = sent.toLowerCase().replace(/[.,!?;:]/g, '').replace(/\\s+/g, ' ').trim();\n    const core = normalized\n      .replace(/^(and )?once again /,'')\n      .replace(/^(as a matter of fact,?|it is important to note that,?|for all intents and purposes,?|needless to say,?|in order to actually|it goes without saying that,?|at this particular point in time,?|with all due respect and without any doubt whatsoever,?|the fact of the matter is that,?|truth be told,?)\\s*/g, '')\n      .trim();\n    if (!seenCore.has(core)) {\n      seenCore.add(core);\n      pass1.push(sent);\n    }\n  }\n\n  // Pass 2: semantic near-duplicate clustering via content-word Jaccard, with number/unit\n  // normalization (two -> 2, milliseconds -> ms) so paraphrases of the same fact collapse\n  // to one mention (e.g. \"targets latency below two milliseconds\" vs \"has a latency\n  // objective under 2 ms\"). First occurrence in document order wins.\n  const sigs = pass1.map(s => ({ text: s, sig: contentSignature(s) }));\n  const kept = [];\n  for (const cand of sigs) {\n    const isDup = kept.some(k => jaccard(k.sig, cand.sig) >= 0.32);\n    if (!isDup) kept.push(cand);\n  }\n  text = kept.map(k => k.text).join(' ');\n\n  text = text.replace(/\\n{3,}/g, '\\n\\n');\n\n  return { json: { ...item.json, cleaned_chunk: text.trim() } };\n});"
+      },
+      "id": "2c9444fe-231c-40de-b884-587dd5e773cd",
+      "name": "Strip Boilerplate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED_NVIDIA_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"meta/llama-3.1-8b-instruct\",\n  \"max_tokens\": 500,\n  \"messages\": [\n    { \"role\": \"user\", \"content\": {{ JSON.stringify(\n        \"This text has already been algorithmically compressed. Tighten it further only where possible — remove any remaining filler or awkward fragments — without dropping any fact. \" +\n        \"CRITICAL: preserve every number, ID, date, and proper noun EXACTLY as written — never round, paraphrase, omit, or invent values. \" +\n        \"Return only the text, nothing else:\\n\\n\" + $json.algo_compressed_chunk\n    ) }} }\n  ]\n}",
+        "options": {}
+      },
+      "id": "3600c4d5-d4cf-4e51-8ce6-6af144bbfa98",
+      "name": "Summarize Chunks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        592,
+        -208
+      ],
+      "retryOnFail": true,
+      "notesInFlow": false,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nlet compressedText = '';\nlet totalGroqTime = 0;\n\nitems.forEach(item => {\n  compressedText += (item.json.compressed_chunk || '') + '\\n';\n  totalGroqTime += (item.json.groq_total_time || 0);\n});\n\n// Use the TRUE original text/count (identical on every item, from Chunk Text),\n// not a reconstruction from already-deduped chunks.\nconst originalText = items[0]?.json.original_text_true || '';\nconst originalTokenCount = items[0]?.json.original_token_count_true || Math.ceil(originalText.length / 4);\nconst compressedTokenCount = Math.ceil(compressedText.length / 4);\n\nlet compressionRatio = 0;\nlet status = 'completed';\n\nif (originalTokenCount < 50) {\n  status = 'input_too_short';\n  compressionRatio = 0;\n} else {\n  compressionRatio = Math.round(((originalTokenCount - compressedTokenCount) / originalTokenCount) * 100 * 100) / 100;\n  if (compressionRatio < 0) compressionRatio = 0;\n  else if (compressionRatio < 70) status = 'below_target';\n}\n\nconst costSaved = ((originalTokenCount - compressedTokenCount) / 1000000) * 3;\n\nconst latencyCompressedMs = Math.round(totalGroqTime * 1000);\nconst estimatedThroughputTokensPerSec = 500;\nconst latencyOriginalMs = Math.round((originalTokenCount / estimatedThroughputTokensPerSec) * 1000) + latencyCompressedMs;\n\nreturn [{\n  json: {\n    original_text: originalText.trim(),\n    compressed_text: compressedText.trim(),\n    original_token_count: originalTokenCount,\n    compressed_token_count: compressedTokenCount,\n    compression_ratio: compressionRatio,\n    cost_saved: Math.round(costSaved * 1000000) / 1000000,\n    latency_original_ms: latencyOriginalMs,\n    latency_compressed_ms: latencyCompressedMs,\n    status: status,\n  }\n}];"
+      },
+      "id": "ac9da1b0-91ff-4062-81bd-b65efca6710e",
+      "name": "Combine and Measure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "compressions",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organisation",
+              "fieldValue": "={{ $json.organisation }}"
+            },
+            {
+              "fieldId": "original_text",
+              "fieldValue": "={{ $json.original_text }}"
+            },
+            {
+              "fieldId": "compressed_text",
+              "fieldValue": "={{ $json.compressed_text }}"
+            },
+            {
+              "fieldId": "original_token_count",
+              "fieldValue": "={{ $json.original_token_count }}"
+            },
+            {
+              "fieldId": "compressed_token_count",
+              "fieldValue": "={{ $json.compressed_token_count }}"
+            },
+            {
+              "fieldId": "compression_ratio",
+              "fieldValue": "={{ $json.compression_ratio }}"
+            },
+            {
+              "fieldId": "cost_saved",
+              "fieldValue": "={{ $json.cost_saved }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $json.status }}"
+            },
+            {
+              "fieldId": "latency_original_ms",
+              "fieldValue": "={{ $json.latency_original_ms }}"
+            },
+            {
+              "fieldId": "latency_compressed_ms",
+              "fieldValue": "={{ $json.latency_compressed_ms }}"
+            },
+            {
+              "fieldId": "reasoning_retention_score",
+              "fieldValue": "={{ $json.reasoning_retention_score }}"
+            }
+          ]
+        }
+      },
+      "id": "509b14e9-70ea-4ad2-ab8c-f317d5b71bef",
+      "name": "Save Result",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1344,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "12bbd643-b0c4-482e-9f89-fe6566e92de7",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1568,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const summarized = $input.all();\nconst original = $('Algorithmic Compress').all();\n\nreturn summarized.map((item, i) => {\n  const originalItem = original[i] ? original[i].json : {};\n  const algo = originalItem.algo_compressed_chunk || originalItem.cleaned_chunk || '';\n  const groqOut = item.json.choices?.[0]?.message?.content;\n  // Only accept Groq's refinement if it's actually as short or shorter than the\n  // guaranteed algorithmic floor. This is what makes the ratio deterministic:\n  // Groq can only ever help, never regress below what the algorithm already achieved.\n  const compressed = (groqOut && groqOut.length <= algo.length) ? groqOut : algo;\n  return {\n    json: {\n      original_chunk: originalItem.cleaned_chunk || '',\n      compressed_chunk: compressed,\n      groq_call_failed: !groqOut,\n      groq_output_rejected: !!groqOut && groqOut.length > algo.length,\n      groq_total_time: item.json.usage?.total_time || 0,\n      original_text_true: originalItem.original_text || '',\n      original_token_count_true: originalItem.original_token_count || 0,\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        -224
+      ],
+      "id": "cf4b2fee-2187-4b9b-afed-95d2c09f9cff",
+      "name": "Recover Original Text"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  json: { ...item.json, timer_start: Date.now() }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        -224
+      ],
+      "id": "4c29ce11-c30a-46be-8140-46e5d97f30b6",
+      "name": "Start Timer"
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Combine and Measure').first().json;\nconst content = $input.first().json.choices?.[0]?.message?.content;\nconst raw = content || '0';\nconst score = parseInt(raw.match(/\\d+/)?.[0] || '0', 10);\nreturn [{\n  json: {\n    ...prev,\n    reasoning_retention_score: content ? Math.min(100, Math.max(0, score)) : null, // null = eval call failed, not \"0% retained\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        -208
+      ],
+      "id": "cd1dd076-f1bf-49ed-b3e4-8f9a3dfbdb0b",
+      "name": "Parse Retention Score"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED_NVIDIA_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"meta/llama-3.1-8b-instruct\",\n  \"max_tokens\": 10,\n  \"messages\": [\n    { \"role\": \"user\", \"content\": {{ JSON.stringify(\"Original text:\\n\" + $json.original_text + \"\\n\\nCompressed text:\\n\" + $json.compressed_text + \"\\n\\nOn a scale of 0 to 100, how much of the essential facts, numbers, names, and reasoning-relevant information from the Original is preserved in the Compressed version? Respond with ONLY the number, nothing else.\") }} }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1456,
+        -208
+      ],
+      "id": "fd27a9bc-e554-4c19-96e0-3ba3a0a0d6e6",
+      "name": "Evaluate Retention\"",
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "3f061b38-909e-4f9c-9148-3f94a4dc86fd",
+      "name": "Algorithmic Compress",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        32
+      ],
+      "parameters": {
+        "jsCode": "const STOPWORDS = new Set(['the','a','an','and','or','but','of','to','in','on','for','with','is','are','was','were','be','been','being','this','that','these','those','it','as','at','by','from','has','have','had','will','would','could','should','can','may','might','not','no','so','if','then','than','also','into','about','over','under','more','most','some','such','only','very']);\n\nfunction tokenizeWords(s) {\n  return s.match(/\\b[\\w'-]+\\b/g) || [];\n}\n\nfunction scoreSentence(sent) {\n  const words = tokenizeWords(sent);\n  let score = 0;\n  for (const w of words) {\n    if (/\\d/.test(w)) score += 2;\n    else if (/^[A-Z][a-zA-Z]*$/.test(w) && w.length > 1) score += 1.5;\n    else if (w.length > 6 && !STOPWORDS.has(w.toLowerCase())) score += 1;\n    else if (STOPWORDS.has(w.toLowerCase())) score -= 0.2;\n  }\n  // Favor code-like fragments so they're likely kept when there's room, but\n  // never unconditionally exempt them from the budget.\n  if (/[{};]|=>|\\bfunction\\s|\\bclass\\s|\\bstruct\\s|\\bfor\\s*\\(|\\bwhile\\s*\\(|\\breturn\\s/.test(sent)) score += 3;\n  // Label/definition-style fragments (\"Purpose: ...\", \"Root cause: ...\", \"Issue: ...\", \"Fix: ...\")\n  // are reliably the fact-bearing sentences in structured documents and were being under-weighted\n  // relative to fact-dense-but-less-critical fragments (e.g. name lists), which cost real Q&A\n  // answerability in testing even while the overall density score looked fine.\n  if (/:\\s/.test(sent)) score += 2;\n  const denom = Math.sqrt(Math.max(words.length, 1));\n  return score / denom;\n}\n\nfunction algorithmicCompress(text, targetRatio) {\n  const totalTokens = Math.ceil(text.length / 4) || 1;\n  // No budget slack — the ratio requirement is a hard floor and a 20% slack test already\n  // landed a real run at 69.57% (under it). Retention gains here come from the chunking and\n  // scoring fixes instead (sentence-safe chunk breaks, colon-label boost, digit-split fix),\n  // which don't trade against the ratio guarantee.\n  const targetTokens = Math.max(1, Math.round(totalTokens * (1 - targetRatio / 100)));\n\n  // Negative lookbehind excludes splitting right after a bare list-number like \"1.\" —\n  // otherwise \"1.\" becomes its own fragment, scores deceptively well from the digit bonus\n  // (cheap + scores well) and crowds out the actual question/list text that followed it.\n  // Also split on bare newlines regardless of punctuation: dense code (JSX attributes,\n  // markup) can run hundreds of characters with no '.', '!', '?', or ';' at all, which\n  // otherwise turns an entire chunk into one unsplittable, unbudgeted fragment that the\n  // \"never keep nothing\" fallback then forces through whole, blowing the budget for that\n  // chunk 2-3x over. Newline is the natural fragment boundary for code.\n  const parts = text.split(/(?<=[^\\d][.!?;])\\s+|\\n+/).map(s => s.trim()).filter(Boolean);\n  const fragments = parts.map((s, i) => ({\n    order: i,\n    text: s,\n    tokens: Math.ceil(s.length / 4) || 1,\n    score: scoreSentence(s),\n  }));\n\n  const bySelection = [...fragments].sort((a, b) => b.score - a.score);\n  const keepSet = new Set();\n  let used = 0;\n  for (const f of bySelection) {\n    if (used >= targetTokens) break;\n    if (used + f.tokens <= targetTokens || keepSet.size === 0) {\n      keepSet.add(f);\n      used += f.tokens;\n    }\n  }\n\n  const kept = fragments.filter(f => keepSet.has(f)).sort((a, b) => a.order - b.order);\n  return kept.map(f => f.text).join(' ');\n}\n\nconst items = $input.all();\nreturn items.map(item => ({\n  json: {\n    ...item.json,\n    algo_compressed_chunk: algorithmicCompress(item.json.cleaned_chunk || '', item.json.target_ratio || 70),\n  },\n}));\n"
+      }
+    }
+  ],
+  "nodeGroups": [],
+  "activeVersion": {
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "compress",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "*"
+          }
+        },
+        "id": "1c2360f8-8e3b-4bc6-86bf-39798cb66320",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          0,
+          0
+        ],
+        "webhookId": "a2be1071-483a-4f9c-a756-c9e2463ad3b0"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\nconst text = (input.body && input.body.text) || input.text || '';\nconst targetRatio = (input.body && input.body.targetRatio) || input.targetRatio || 70;\n\nconst originalCharCount = text.length;\nconst originalTokenCount = Math.round(originalCharCount / 4);\n\nfunction stripDividers(t) {\n  return t.replace(/^[ \\t]*[-=*_~]{3,}[ \\t]*$/gm, '');\n}\n\nconst FILLER_LINE_RE = [\n  /^thanks( everyone| all| team)?\\.?$/i,\n  /^sounds good\\.?$/i,\n  /^let'?s revisit( next week)?\\.?$/i,\n  /^i'?ll schedule another meeting\\.?$/i,\n  /^great discussion\\.?$/i,\n  /^thank you\\.?$/i,\n];\nfunction stripFillerLines(t) {\n  return t.split('\\n').filter(line => !FILLER_LINE_RE.some(re => re.test(line.trim()))).join('\\n');\n}\n\nfunction looksLikeCode(s) {\n  return /[{};]|=>|\\bfunction\\s|\\bclass\\s|\\bstruct\\s|\\bfor\\s*\\(|\\bwhile\\s*\\(|\\bimport\\s|\\breturn\\s/.test(s);\n}\n\nfunction compactListBlock(paragraph) {\n  if (looksLikeCode(paragraph)) return paragraph;\n  const lines = paragraph.split('\\n').map(l => l.trim()).filter(Boolean);\n  if (lines.length < 3) return paragraph;\n  const allShort = lines.every(l => l.length <= 60 && !/[.!?:]$/.test(l));\n  if (!allShort) return paragraph;\n  return lines.join(', ');\n}\n\nfunction preprocess(t) {\n  let out = stripDividers(t);\n  out = stripFillerLines(out);\n  out = out.replace(/\\n{3,}/g, '\\n\\n');\n  out = out.split(/\\n\\s*\\n/).map(compactListBlock).join('\\n\\n');\n  return out;\n}\n\nconst preprocessed = preprocess(text);\n\nconst MAX = 500;\nconst paragraphs = preprocessed.split(/\\n\\s*\\n/);\nconst chunks = [];\nlet current = '';\n\n// Break priority when a paragraph exceeds MAX: last sentence-ending punctuation within\n// budget (best — never splits mid-sentence), else last newline, else last whitespace,\n// else a hard cut at MAX as an absolute last resort (a single token longer than MAX chars).\nfunction lastSentenceBreak(s, limit) {\n  let best = -1;\n  for (const mark of ['. ', '! ', '? ']) {\n    const idx = s.lastIndexOf(mark, limit);\n    if (idx > best) best = idx + 1; // break right after the punctuation mark\n  }\n  return best;\n}\n\nfunction flushOversized() {\n  while (current.length > MAX) {\n    let breakAt = lastSentenceBreak(current, MAX);\n    if (breakAt <= 0) breakAt = current.lastIndexOf('\\n', MAX);\n    if (breakAt <= 0) breakAt = current.lastIndexOf(' ', MAX);\n    if (breakAt <= 0) breakAt = MAX;\n    chunks.push(current.slice(0, breakAt));\n    current = current.slice(breakAt).replace(/^[\\n ]+/, '');\n  }\n}\n\nfor (const para of paragraphs) {\n  const candidate = current ? current + '\\n\\n' + para : para;\n  if (candidate.length > MAX && current.length > 0) {\n    chunks.push(current);\n    current = para;\n  } else {\n    current = candidate;\n  }\n  flushOversized();\n}\nif (current.trim().length > 0) chunks.push(current);\nif (chunks.length === 0) chunks.push(preprocessed);\n\nreturn chunks.map((c, i) => ({\n  json: {\n    chunk: c,\n    chunk_index: i,\n    original_char_count: originalCharCount,\n    original_token_count: originalTokenCount,\n    original_text: text,\n    target_ratio: targetRatio,\n  },\n}));\n"
+        },
+        "id": "f1aea03e-279d-4945-b72e-383e0be5bb2d",
+        "name": "Chunk Text",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          224,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const items = $input.all();\n\nconst STOPWORDS = new Set(['the','a','an','and','or','but','of','to','in','on','for','with','is','are','was','were','be','been','being','this','that','these','those','it','as','at','by','from','has','have','had','will','would','could','should','can','may','might','not','no','so','if','then','than','also','into','about','over','under','more','most','some','such','only','very']);\nconst WORD_NUM = { zero:'0', one:'1', two:'2', three:'3', four:'4', five:'5', six:'6', seven:'7', eight:'8', nine:'9', ten:'10' };\nconst UNIT_NORM = { milliseconds:'ms', millisecond:'ms', ms:'ms', seconds:'s', second:'s' };\n\nfunction normalizeToken(w) {\n  const lw = w.toLowerCase();\n  if (WORD_NUM[lw]) return WORD_NUM[lw];\n  if (UNIT_NORM[lw]) return UNIT_NORM[lw];\n  return lw;\n}\n\nfunction contentSignature(sent) {\n  const words = (sent.match(/\\b[\\w.]+\\b/g) || []).map(normalizeToken);\n  return new Set(words.filter(w => !STOPWORDS.has(w) && w.length > 1));\n}\n\nfunction jaccard(setA, setB) {\n  if (setA.size === 0 || setB.size === 0) return 0;\n  let inter = 0;\n  for (const w of setA) if (setB.has(w)) inter++;\n  return inter / (setA.size + setB.size - inter);\n}\n\nreturn items.map(item => {\n  let text = item.json.cleaned_chunk || item.json.chunk || item.json.text || '';\n\n  let sentences = text.split(/(?<=[.!?])\\s+/).map(s => s.trim()).filter(Boolean);\n\n  // Pass 1: near-literal dedup (existing) — catches repeated sentences with only\n  // filler-phrase or punctuation differences.\n  const seenCore = new Set();\n  const pass1 = [];\n  for (const sent of sentences) {\n    const normalized = sent.toLowerCase().replace(/[.,!?;:]/g, '').replace(/\\s+/g, ' ').trim();\n    const core = normalized\n      .replace(/^(and )?once again /,'')\n      .replace(/^(as a matter of fact,?|it is important to note that,?|for all intents and purposes,?|needless to say,?|in order to actually|it goes without saying that,?|at this particular point in time,?|with all due respect and without any doubt whatsoever,?|the fact of the matter is that,?|truth be told,?)\\s*/g, '')\n      .trim();\n    if (!seenCore.has(core)) {\n      seenCore.add(core);\n      pass1.push(sent);\n    }\n  }\n\n  // Pass 2: semantic near-duplicate clustering via content-word Jaccard, with number/unit\n  // normalization (two -> 2, milliseconds -> ms) so paraphrases of the same fact collapse\n  // to one mention (e.g. \"targets latency below two milliseconds\" vs \"has a latency\n  // objective under 2 ms\"). First occurrence in document order wins.\n  const sigs = pass1.map(s => ({ text: s, sig: contentSignature(s) }));\n  const kept = [];\n  for (const cand of sigs) {\n    const isDup = kept.some(k => jaccard(k.sig, cand.sig) >= 0.32);\n    if (!isDup) kept.push(cand);\n  }\n  text = kept.map(k => k.text).join(' ');\n\n  text = text.replace(/\\n{3,}/g, '\\n\\n');\n\n  return { json: { ...item.json, cleaned_chunk: text.trim() } };\n});"
+        },
+        "id": "2c9444fe-231c-40de-b884-587dd5e773cd",
+        "name": "Strip Boilerplate",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          448,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://integrate.api.nvidia.com/v1/chat/completions",
+          "authentication": "none",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Authorization",
+                "value": "Bearer REDACTED_NVIDIA_API_KEY"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"model\": \"meta/llama-3.1-8b-instruct\",\n  \"max_tokens\": 500,\n  \"messages\": [\n    { \"role\": \"user\", \"content\": {{ JSON.stringify(\n        \"This text has already been algorithmically compressed. Tighten it further only where possible — remove any remaining filler or awkward fragments — without dropping any fact. \" +\n        \"CRITICAL: preserve every number, ID, date, and proper noun EXACTLY as written — never round, paraphrase, omit, or invent values. \" +\n        \"Return only the text, nothing else:\\n\\n\" + $json.algo_compressed_chunk\n    ) }} }\n  ]\n}",
+          "options": {}
+        },
+        "id": "3600c4d5-d4cf-4e51-8ce6-6af144bbfa98",
+        "name": "Summarize Chunks",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          592,
+          -208
+        ],
+        "retryOnFail": true,
+        "notesInFlow": false,
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const items = $input.all();\nlet compressedText = '';\nlet totalGroqTime = 0;\n\nitems.forEach(item => {\n  compressedText += (item.json.compressed_chunk || '') + '\\n';\n  totalGroqTime += (item.json.groq_total_time || 0);\n});\n\n// Use the TRUE original text/count (identical on every item, from Chunk Text),\n// not a reconstruction from already-deduped chunks.\nconst originalText = items[0]?.json.original_text_true || '';\nconst originalTokenCount = items[0]?.json.original_token_count_true || Math.ceil(originalText.length / 4);\nconst compressedTokenCount = Math.ceil(compressedText.length / 4);\n\nlet compressionRatio = 0;\nlet status = 'completed';\n\nif (originalTokenCount < 50) {\n  status = 'input_too_short';\n  compressionRatio = 0;\n} else {\n  compressionRatio = Math.round(((originalTokenCount - compressedTokenCount) / originalTokenCount) * 100 * 100) / 100;\n  if (compressionRatio < 0) compressionRatio = 0;\n  else if (compressionRatio < 70) status = 'below_target';\n}\n\nconst costSaved = ((originalTokenCount - compressedTokenCount) / 1000000) * 3;\n\nconst latencyCompressedMs = Math.round(totalGroqTime * 1000);\nconst estimatedThroughputTokensPerSec = 500;\nconst latencyOriginalMs = Math.round((originalTokenCount / estimatedThroughputTokensPerSec) * 1000) + latencyCompressedMs;\n\nreturn [{\n  json: {\n    original_text: originalText.trim(),\n    compressed_text: compressedText.trim(),\n    original_token_count: originalTokenCount,\n    compressed_token_count: compressedTokenCount,\n    compression_ratio: compressionRatio,\n    cost_saved: Math.round(costSaved * 1000000) / 1000000,\n    latency_original_ms: latencyOriginalMs,\n    latency_compressed_ms: latencyCompressedMs,\n    status: status,\n  }\n}];"
+        },
+        "id": "ac9da1b0-91ff-4062-81bd-b65efca6710e",
+        "name": "Combine and Measure",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1232,
+          -208
+        ]
+      },
+      {
+        "parameters": {
+          "tableId": "compressions",
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "organisation",
+                "fieldValue": "={{ $json.organisation }}"
+              },
+              {
+                "fieldId": "original_text",
+                "fieldValue": "={{ $json.original_text }}"
+              },
+              {
+                "fieldId": "compressed_text",
+                "fieldValue": "={{ $json.compressed_text }}"
+              },
+              {
+                "fieldId": "original_token_count",
+                "fieldValue": "={{ $json.original_token_count }}"
+              },
+              {
+                "fieldId": "compressed_token_count",
+                "fieldValue": "={{ $json.compressed_token_count }}"
+              },
+              {
+                "fieldId": "compression_ratio",
+                "fieldValue": "={{ $json.compression_ratio }}"
+              },
+              {
+                "fieldId": "cost_saved",
+                "fieldValue": "={{ $json.cost_saved }}"
+              },
+              {
+                "fieldId": "status",
+                "fieldValue": "={{ $json.status }}"
+              },
+              {
+                "fieldId": "latency_original_ms",
+                "fieldValue": "={{ $json.latency_original_ms }}"
+              },
+              {
+                "fieldId": "latency_compressed_ms",
+                "fieldValue": "={{ $json.latency_compressed_ms }}"
+              },
+              {
+                "fieldId": "reasoning_retention_score",
+                "fieldValue": "={{ $json.reasoning_retention_score }}"
+              }
+            ]
+          }
+        },
+        "id": "509b14e9-70ea-4ad2-ab8c-f317d5b71bef",
+        "name": "Save Result",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          1344,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "id": "12bbd643-b0c4-482e-9f89-fe6566e92de7",
+        "name": "Respond to Webhook",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          1568,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const summarized = $input.all();\nconst original = $('Algorithmic Compress').all();\n\nreturn summarized.map((item, i) => {\n  const originalItem = original[i] ? original[i].json : {};\n  const algo = originalItem.algo_compressed_chunk || originalItem.cleaned_chunk || '';\n  const groqOut = item.json.choices?.[0]?.message?.content;\n  // Only accept Groq's refinement if it's actually as short or shorter than the\n  // guaranteed algorithmic floor. This is what makes the ratio deterministic:\n  // Groq can only ever help, never regress below what the algorithm already achieved.\n  const compressed = (groqOut && groqOut.length <= algo.length) ? groqOut : algo;\n  return {\n    json: {\n      original_chunk: originalItem.cleaned_chunk || '',\n      compressed_chunk: compressed,\n      groq_call_failed: !groqOut,\n      groq_output_rejected: !!groqOut && groqOut.length > algo.length,\n      groq_total_time: item.json.usage?.total_time || 0,\n      original_text_true: originalItem.original_text || '',\n      original_token_count_true: originalItem.original_token_count || 0,\n    }\n  };\n});"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          816,
+          -224
+        ],
+        "id": "cf4b2fee-2187-4b9b-afed-95d2c09f9cff",
+        "name": "Recover Original Text"
+      },
+      {
+        "parameters": {
+          "jsCode": "return $input.all().map(item => ({\n  json: { ...item.json, timer_start: Date.now() }\n}));"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1040,
+          -224
+        ],
+        "id": "4c29ce11-c30a-46be-8140-46e5d97f30b6",
+        "name": "Start Timer"
+      },
+      {
+        "parameters": {
+          "jsCode": "const prev = $('Combine and Measure').first().json;\nconst content = $input.first().json.choices?.[0]?.message?.content;\nconst raw = content || '0';\nconst score = parseInt(raw.match(/\\d+/)?.[0] || '0', 10);\nreturn [{\n  json: {\n    ...prev,\n    reasoning_retention_score: content ? Math.min(100, Math.max(0, score)) : null, // null = eval call failed, not \"0% retained\"\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1680,
+          -208
+        ],
+        "id": "cd1dd076-f1bf-49ed-b3e4-8f9a3dfbdb0b",
+        "name": "Parse Retention Score"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://integrate.api.nvidia.com/v1/chat/completions",
+          "authentication": "none",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Authorization",
+                "value": "Bearer REDACTED_NVIDIA_API_KEY"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"model\": \"meta/llama-3.1-8b-instruct\",\n  \"max_tokens\": 10,\n  \"messages\": [\n    { \"role\": \"user\", \"content\": {{ JSON.stringify(\"Original text:\\n\" + $json.original_text + \"\\n\\nCompressed text:\\n\" + $json.compressed_text + \"\\n\\nOn a scale of 0 to 100, how much of the essential facts, numbers, names, and reasoning-relevant information from the Original is preserved in the Compressed version? Respond with ONLY the number, nothing else.\") }} }\n  ]\n}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1456,
+          -208
+        ],
+        "id": "fd27a9bc-e554-4c19-96e0-3ba3a0a0d6e6",
+        "name": "Evaluate Retention\"",
+        "retryOnFail": true,
+        "onError": "continueErrorOutput"
+      },
+      {
+        "id": "3f061b38-909e-4f9c-9148-3f94a4dc86fd",
+        "name": "Algorithmic Compress",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          592,
+          32
+        ],
+        "parameters": {
+          "jsCode": "const STOPWORDS = new Set(['the','a','an','and','or','but','of','to','in','on','for','with','is','are','was','were','be','been','being','this','that','these','those','it','as','at','by','from','has','have','had','will','would','could','should','can','may','might','not','no','so','if','then','than','also','into','about','over','under','more','most','some','such','only','very']);\n\nfunction tokenizeWords(s) {\n  return s.match(/\\b[\\w'-]+\\b/g) || [];\n}\n\nfunction scoreSentence(sent) {\n  const words = tokenizeWords(sent);\n  let score = 0;\n  for (const w of words) {\n    if (/\\d/.test(w)) score += 2;\n    else if (/^[A-Z][a-zA-Z]*$/.test(w) && w.length > 1) score += 1.5;\n    else if (w.length > 6 && !STOPWORDS.has(w.toLowerCase())) score += 1;\n    else if (STOPWORDS.has(w.toLowerCase())) score -= 0.2;\n  }\n  // Favor code-like fragments so they're likely kept when there's room, but\n  // never unconditionally exempt them from the budget.\n  if (/[{};]|=>|\\bfunction\\s|\\bclass\\s|\\bstruct\\s|\\bfor\\s*\\(|\\bwhile\\s*\\(|\\breturn\\s/.test(sent)) score += 3;\n  // Label/definition-style fragments (\"Purpose: ...\", \"Root cause: ...\", \"Issue: ...\", \"Fix: ...\")\n  // are reliably the fact-bearing sentences in structured documents and were being under-weighted\n  // relative to fact-dense-but-less-critical fragments (e.g. name lists), which cost real Q&A\n  // answerability in testing even while the overall density score looked fine.\n  if (/:\\s/.test(sent)) score += 2;\n  const denom = Math.sqrt(Math.max(words.length, 1));\n  return score / denom;\n}\n\nfunction algorithmicCompress(text, targetRatio) {\n  const totalTokens = Math.ceil(text.length / 4) || 1;\n  // No budget slack — the ratio requirement is a hard floor and a 20% slack test already\n  // landed a real run at 69.57% (under it). Retention gains here come from the chunking and\n  // scoring fixes instead (sentence-safe chunk breaks, colon-label boost, digit-split fix),\n  // which don't trade against the ratio guarantee.\n  const targetTokens = Math.max(1, Math.round(totalTokens * (1 - targetRatio / 100)));\n\n  // Negative lookbehind excludes splitting right after a bare list-number like \"1.\" —\n  // otherwise \"1.\" becomes its own fragment, scores deceptively well from the digit bonus\n  // (cheap + scores well) and crowds out the actual question/list text that followed it.\n  // Also split on bare newlines regardless of punctuation: dense code (JSX attributes,\n  // markup) can run hundreds of characters with no '.', '!', '?', or ';' at all, which\n  // otherwise turns an entire chunk into one unsplittable, unbudgeted fragment that the\n  // \"never keep nothing\" fallback then forces through whole, blowing the budget for that\n  // chunk 2-3x over. Newline is the natural fragment boundary for code.\n  const parts = text.split(/(?<=[^\\d][.!?;])\\s+|\\n+/).map(s => s.trim()).filter(Boolean);\n  const fragments = parts.map((s, i) => ({\n    order: i,\n    text: s,\n    tokens: Math.ceil(s.length / 4) || 1,\n    score: scoreSentence(s),\n  }));\n\n  const bySelection = [...fragments].sort((a, b) => b.score - a.score);\n  const keepSet = new Set();\n  let used = 0;\n  for (const f of bySelection) {\n    if (used >= targetTokens) break;\n    if (used + f.tokens <= targetTokens || keepSet.size === 0) {\n      keepSet.add(f);\n      used += f.tokens;\n    }\n  }\n\n  const kept = fragments.filter(f => keepSet.has(f)).sort((a, b) => a.order - b.order);\n  return kept.map(f => f.text).join(' ');\n}\n\nconst items = $input.all();\nreturn items.map(item => ({\n  json: {\n    ...item.json,\n    algo_compressed_chunk: algorithmicCompress(item.json.cleaned_chunk || '', item.json.target_ratio || 70),\n  },\n}));\n"
+        }
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Chunk Text",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Chunk Text": {
+        "main": [
+          [
+            {
+              "node": "Strip Boilerplate",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Summarize Chunks": {
+        "main": [
+          [
+            {
+              "node": "Recover Original Text",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Combine and Measure": {
+        "main": [
+          [
+            {
+              "node": "Evaluate Retention\"",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Save Result": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Recover Original Text": {
+        "main": [
+          [
+            {
+              "node": "Start Timer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Start Timer": {
+        "main": [
+          [
+            {
+              "node": "Combine and Measure",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse Retention Score": {
+        "main": [
+          [
+            {
+              "node": "Save Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Evaluate Retention\"": {
+        "main": [
+          [
+            {
+              "node": "Parse Retention Score",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Strip Boilerplate": {
+        "main": [
+          [
+            {
+              "node": "Algorithmic Compress",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Algorithmic Compress": {
+        "main": [
+          [
+            {
+              "node": "Summarize Chunks",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "nodeGroups": []
+  },
+  "tags": [],
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "parentFolderId": null,
+  "scopes": [
+    "execution:reveal",
+    "workflow:create",
+    "workflow:delete",
+    "workflow:disableRedaction",
+    "workflow:enableRedaction",
+    "workflow:execute",
+    "workflow:execute-chat",
+    "workflow:export",
+    "workflow:import",
+    "workflow:list",
+    "workflow:move",
+    "workflow:publish",
+    "workflow:read",
+    "workflow:share",
+    "workflow:unpublish",
+    "workflow:unshare",
+    "workflow:update"
+  ],
+  "canExecute": true
+}
