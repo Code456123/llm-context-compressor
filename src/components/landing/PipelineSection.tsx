@@ -1,81 +1,57 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  FileText, 
-  Scissors, 
-  CopyCheck, 
-  BarChart3, 
-  Sliders, 
-  Zap, 
-  Bot, 
-  CheckCircle2, 
-  Play, 
-  RefreshCw 
-} from 'lucide-react';
+import { Zap, CheckCircle2, Play, RefreshCw } from 'lucide-react';
+import { PIPELINE_STAGES } from '../../constants/pipelineStages';
 
+/**
+ * Illustrative auto-playing animation of the real n8n "Context Compression
+ * Engine" workflow. This is a public, unauthenticated marketing section —
+ * it does not call the live webhook (that costs real NVIDIA/n8n usage per
+ * request) — but the stage names, order, and architecture facts below are
+ * the real pipeline (see src/constants/pipelineStages.ts), not a fabricated
+ * conceptual one.
+ */
 export const PipelineSection: React.FC = () => {
   const [activeStep, setActiveStep] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [targetRatio, setTargetRatio] = useState(70);
 
-  const steps = [
-    {
-      id: 'raw',
-      title: 'Raw Prompt',
-      subtitle: 'Input Payload',
-      icon: FileText,
-      detail: 'Parses raw multi-modal prompt, massive logs & system documents.',
-      stat: '108,400 Tokens',
-    },
-    {
-      id: 'chunk',
-      title: 'Chunking',
-      subtitle: 'AST Parsing',
-      icon: Scissors,
-      detail: 'Splits raw text into semantic AST syntax blocks, preserving code trees.',
-      stat: '1,420 AST Chunks',
-    },
-    {
-      id: 'dedup',
-      title: 'Deduplication',
-      subtitle: 'MinHash LSH',
-      icon: CopyCheck,
-      detail: 'Identifies & purges repetitive log traces, header boilerplate & mirror tokens.',
-      stat: '-32,100 Redundant',
-    },
-    {
-      id: 'rank',
-      title: 'Importance Ranking',
-      subtitle: 'Attention Entropy',
-      icon: BarChart3,
-      detail: 'Scores information density of each block using cross-attention entropy.',
-      stat: 'Top 30% Quantile',
-    },
-    {
-      id: 'budget',
-      title: 'Budget Selector',
-      subtitle: 'Target Budget',
-      icon: Sliders,
-      detail: `Applies custom enterprise target compression constraint (${targetRatio}% reduction).`,
-      stat: `${targetRatio}% Target`,
-    },
-    {
-      id: 'compress',
-      title: 'Compression',
-      subtitle: 'Sub-token Fusion',
-      icon: Zap,
-      detail: 'Fuses key semantic entities into high-density prompt schema without loss.',
-      stat: '29,800 Output',
-    },
-    {
-      id: 'llm',
-      title: 'LLM Execution',
-      subtitle: 'Clean Prompt',
-      icon: Bot,
-      detail: 'Dispatches condensed context directly to GPT-4o, Claude 3.5, or Gemini.',
-      stat: '98.9% Acc Retained',
-    },
-  ];
+  const architectureFacts: Record<string, string> = {
+    webhook: 'POST /compress',
+    chunk: '~500 char chunks',
+    strip: 'Jaccard ≥ 32% dedup',
+    algo: `Global budget: -${targetRatio}%`,
+    llm: 'meta/llama-3.1-8b-instruct',
+    measure: 'Ratio · Cost · Latency',
+    critique: 'Fact recovery pass',
+    guard: '≤105% budget tolerance',
+    retention: 'LLM-as-judge 0-100',
+    save: 'Supabase: compressions',
+    respond: 'JSON payload',
+  };
+
+  const shortSubtitle: Record<string, string> = {
+    webhook: 'n8n Webhook',
+    chunk: 'Chunk Text',
+    strip: 'Strip Boilerplate',
+    algo: 'Algorithmic Compress',
+    llm: 'NVIDIA Llama',
+    measure: 'Combine & Measure',
+    critique: 'Critique And Repair',
+    guard: 'Apply Repair Guard',
+    retention: 'Evaluate Retention',
+    save: 'Supabase Insert',
+    respond: 'Respond to Webhook',
+  };
+
+  const steps = PIPELINE_STAGES.map((stage) => ({
+    id: stage.id,
+    title: stage.title,
+    subtitle: shortSubtitle[stage.id],
+    icon: stage.icon,
+    detail: stage.purpose,
+    stat: architectureFacts[stage.id],
+  }));
 
   // Auto pipeline step progression
   useEffect(() => {
@@ -152,7 +128,7 @@ export const PipelineSection: React.FC = () => {
 
       {/* Horizontal Pipeline Steps */}
       <div className="relative overflow-x-auto pb-6">
-        <div className="min-w-[900px] flex items-center justify-between gap-3 relative z-10">
+        <div className="min-w-[1650px] flex items-center justify-between gap-3 relative z-10">
           {steps.map((step, idx) => {
             const Icon = step.icon;
             const isActive = idx === activeStep;
@@ -160,14 +136,14 @@ export const PipelineSection: React.FC = () => {
 
             return (
               <React.Fragment key={step.id}>
-                {/* Node */}
+                {/* Node — fixed height + line-clamped text so all cards stay symmetric regardless of title/stat length */}
                 <motion.div
                   onClick={() => {
                     setActiveStep(idx);
                     setIsPlaying(false);
                   }}
                   whileHover={{ scale: 1.05 }}
-                  className={`flex-1 p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col justify-between min-h-[140px] relative ${
+                  className={`flex-1 min-w-[136px] h-[196px] p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col justify-between relative ${
                     isActive
                       ? 'bg-zinc-900 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.12)]'
                       : isCompleted
@@ -175,7 +151,7 @@ export const PipelineSection: React.FC = () => {
                       : 'bg-zinc-950/40 border-white/5 hover:border-white/20'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center justify-between mb-3 shrink-0">
                     <div
                       className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
                         isActive
@@ -190,19 +166,21 @@ export const PipelineSection: React.FC = () => {
                     {isCompleted ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                     ) : (
-                      <span className="text-[10px] font-mono text-zinc-600">0{idx + 1}</span>
+                      <span className="text-[10px] font-mono text-zinc-600">{String(idx + 1).padStart(2, '0')}</span>
                     )}
                   </div>
 
-                  <div>
-                    <h4 className={`text-xs font-semibold ${isActive ? 'text-white' : 'text-zinc-300'}`}>
+                  <div className="flex-1 min-h-0">
+                    <h4
+                      className={`text-xs font-semibold leading-tight line-clamp-3 ${isActive ? 'text-white' : 'text-zinc-300'}`}
+                    >
                       {step.title}
                     </h4>
-                    <p className="text-[10px] text-zinc-500 font-mono mt-0.5">{step.subtitle}</p>
+                    <p className="text-[10px] text-zinc-500 font-mono mt-1 line-clamp-1">{step.subtitle}</p>
                   </div>
 
-                  <div className="mt-3 pt-2 border-t border-white/5 text-[10px] font-mono text-zinc-400 flex items-center justify-between">
-                    <span>{step.stat}</span>
+                  <div className="mt-3 pt-2 border-t border-white/5 text-[10px] font-mono text-zinc-400 flex items-center justify-between shrink-0">
+                    <span className="line-clamp-1">{step.stat}</span>
                   </div>
 
                   {isActive && (
@@ -255,7 +233,7 @@ export const PipelineSection: React.FC = () => {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-semibold text-white">
-                  Step 0{activeStep + 1}: {steps[activeStep].title}
+                  Step {String(activeStep + 1).padStart(2, '0')}: {steps[activeStep].title}
                 </h3>
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/10 text-white border border-white/10">
                   {steps[activeStep].subtitle}

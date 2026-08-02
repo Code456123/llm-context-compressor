@@ -1,5 +1,13 @@
-/** Shape of the Supabase row returned by n8n webhook after compression */
-export interface N8nResult {
+import type { LucideIcon } from 'lucide-react';
+
+/**
+ * Shape of the Supabase `compressions` row, returned verbatim by the n8n
+ * "Respond to Webhook" node. Field names are matched 1:1 to both the DB
+ * columns and the n8n "Combine and Measure" / "Save Result" nodes on
+ * purpose — this is the single shared compression result model used
+ * across the app (request panel, pipeline, results, history).
+ */
+export interface CompressionResult {
   id: string;
   organisation: string;
   original_text: string;
@@ -13,6 +21,30 @@ export interface N8nResult {
   latency_compressed_ms: number | null;
   status: 'completed' | 'input_too_short' | 'below_target' | string;
   created_at: string;
+}
+
+/** @deprecated use {@link CompressionResult} */
+export type N8nResult = CompressionResult;
+
+/** Status of a single real n8n pipeline node/group as shown in the UI. */
+export type PipelineStageStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+/** Static metadata for a real n8n pipeline stage (or group of invisible-detail nodes). */
+export interface PipelineStageDef {
+  id: string;
+  title: string;
+  /** Real n8n node name(s) this card represents. */
+  nodeNames: string;
+  /** What this stage does — shown in the detail panel (Instruction 8). */
+  purpose: string;
+  /** Short label shown in the compact status line while this stage is running (Instruction 3). */
+  runningLabel: string;
+  icon: LucideIcon;
+}
+
+/** Runtime state of one pipeline stage during a compression run. */
+export interface PipelineStageState extends PipelineStageDef {
+  status: PipelineStageStatus;
 }
 
 export type CompressionMode = 'speed' | 'balanced' | 'accuracy';

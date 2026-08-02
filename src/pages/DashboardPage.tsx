@@ -1,27 +1,100 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Zap, 
-  UploadCloud, 
-  Check, 
-  Copy, 
-  SlidersHorizontal, 
-  DollarSign, 
-  Clock, 
+import {
+  Zap,
+  UploadCloud,
+  Check,
+  Copy,
+  SlidersHorizontal,
+  DollarSign,
+  Clock,
   RefreshCw,
   Loader2,
-  AlertTriangle
+  AlertTriangle,
+  Timer,
+  Activity,
+  Brain,
+  Gauge,
+  Layers,
+  Percent,
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { supabase } from '../lib/supabaseClient';
-import { N8nResult } from '../types';
+import { CompressionResult } from '../types';
+import { CompressionPipeline } from '../components/CompressionPipeline';
+import { ReasoningGauge } from '../components/ReasoningGauge';
+import { useCompressionRun } from '../hooks/useCompressionRun';
 
 interface KpiData {
   tokensSaved: number;
   avgCompressionRatio: number;
   totalCostSaved: number;
   runCount: number;
+  avgReasoningRetention: number | null;
+  avgCostSaved: number;
+  avgLatencyReductionPct: number | null;
 }
+
+type CompressionRow = Pick<
+  CompressionResult,
+  | 'original_token_count'
+  | 'compressed_token_count'
+  | 'compression_ratio'
+  | 'cost_saved'
+  | 'reasoning_retention_score'
+  | 'latency_original_ms'
+  | 'latency_compressed_ms'
+>;
+
+const COMPRESSION_KPI_COLUMNS =
+  'original_token_count, compressed_token_count, compression_ratio, cost_saved, reasoning_retention_score, latency_original_ms, latency_compressed_ms';
+
+const computeKpis = (rows: CompressionRow[]): KpiData => {
+  if (rows.length === 0) {
+    return {
+      tokensSaved: 0,
+      avgCompressionRatio: 0,
+      totalCostSaved: 0,
+      runCount: 0,
+      avgReasoningRetention: null,
+      avgCostSaved: 0,
+      avgLatencyReductionPct: null,
+    };
+  }
+
+  const tokensSaved = rows.reduce((sum, r) => sum + (r.original_token_count - r.compressed_token_count), 0);
+  const avgRatio = rows.reduce((sum, r) => sum + (r.compression_ratio ?? 0), 0) / rows.length;
+  const totalCost = rows.reduce((sum, r) => sum + (r.cost_saved ?? 0), 0);
+
+  const retentionRows = rows.filter((r) => r.reasoning_retention_score != null);
+  const avgReasoningRetention =
+    retentionRows.length > 0
+      ? retentionRows.reduce((sum, r) => sum + (r.reasoning_retention_score as number), 0) / retentionRows.length
+      : null;
+
+  const latencyRows = rows.filter(
+    (r) => r.latency_original_ms != null && r.latency_compressed_ms != null && r.latency_original_ms > 0
+  );
+  const avgLatencyReductionPct =
+    latencyRows.length > 0
+      ? (latencyRows.reduce(
+          (sum, r) => sum + (r.latency_original_ms! - r.latency_compressed_ms!) / r.latency_original_ms!,
+          0
+        ) /
+          latencyRows.length) *
+        100
+      : null;
+
+  return {
+    tokensSaved,
+    avgCompressionRatio: avgRatio,
+    totalCostSaved: totalCost,
+    runCount: rows.length,
+    avgReasoningRetention,
+    avgCostSaved: totalCost / rows.length,
+    avgLatencyReductionPct,
+  };
+};
 
 const defaultSampleText = `UNITED STATES SECURITIES AND EXCHANGE COMMISSION
 FORM 10-K ANNUAL REPORT
@@ -43,37 +116,26 @@ const chartData = [
 
 export const DashboardPage: React.FC = () => {
   const [inputText, setInputText] = useState('');
-  const [isCompressing, setIsCompressing] = useState(false);
   const [targetRatio, setTargetRatio] = useState(70);
-  const [compressionResult, setCompressionResult] = useState<N8nResult | null>(null);
+  const [compressionResult, setCompressionResult] = useState<CompressionResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [compressError, setCompressError] = useState<string | null>(null);
+  const pipeline = useCompressionRun();
 
   // Real KPI data from Supabase
-  const [kpi, setKpi] = useState<KpiData>({ tokensSaved: 0, avgCompressionRatio: 0, totalCostSaved: 0, runCount: 0 });
+  const [kpi, setKpi] = useState<KpiData>(computeKpis([]));
   const [kpiLoading, setKpiLoading] = useState(true);
 
+  const refreshKpis = async () => {
+    const { data, error } = await supabase.from('compressions').select(COMPRESSION_KPI_COLUMNS).eq('status', 'completed');
+    if (!error && data) {
+      setKpi(computeKpis(data as CompressionRow[]));
+    }
+  };
+
   useEffect(() => {
-    const fetchKpis = async () => {
-      setKpiLoading(true);
-      const { data, error } = await supabase
-        .from('compressions')
-        .select('original_token_count, compressed_token_count, compression_ratio, cost_saved')
-        .eq('status', 'completed');
-
-      if (!error && data && data.length > 0) {
-        const rows = data as Pick<N8nResult, 'original_token_count' | 'compressed_token_count' | 'compression_ratio' | 'cost_saved'>[];
-        const tokensSaved = rows.reduce((sum, r) => sum + (r.original_token_count - r.compressed_token_count), 0);
-        const avgRatio = rows.reduce((sum, r) => sum + (r.compression_ratio ?? 0), 0) / rows.length;
-        const totalCost = rows.reduce((sum, r) => sum + (r.cost_saved ?? 0), 0);
-        setKpi({ tokensSaved, avgCompressionRatio: avgRatio, totalCostSaved: totalCost, runCount: rows.length });
-      } else {
-        setKpi({ tokensSaved: 0, avgCompressionRatio: 0, totalCostSaved: 0, runCount: 0 });
-      }
-      setKpiLoading(false);
-    };
-
-    fetchKpis();
+    setKpiLoading(true);
+    refreshKpis().finally(() => setKpiLoading(false));
   }, []);
 
   const handleRunCompression = async () => {
@@ -86,56 +148,17 @@ export const DashboardPage: React.FC = () => {
       return;
     }
 
-    setIsCompressing(true);
     setCompressionResult(null);
     setCompressError(null);
 
     try {
-      const res = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToProcess, targetRatio }),
-      });
-
-      const rawBody = await res.text();
-      console.log('[n8n webhook] status:', res.status, 'body:', rawBody);
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText} — ${rawBody.slice(0, 300)}`);
-
-      if (!rawBody) {
-        throw new Error(
-          'n8n returned an empty response body. The workflow likely errored before "Respond to Webhook" ' +
-          '(check the n8n Executions tab for this run — most commonly the Supabase "Save Result" insert failed).'
-        );
-      }
-
-      let result: N8nResult;
-      try {
-        result = JSON.parse(rawBody);
-      } catch {
-        throw new Error(`n8n response was not valid JSON: ${rawBody.slice(0, 300)}`);
-      }
+      const result = await pipeline.run(textToProcess, targetRatio, webhookUrl);
       setCompressionResult(result);
-
-      // Refresh KPIs after new compression
-      const { data } = await supabase
-        .from('compressions')
-        .select('original_token_count, compressed_token_count, compression_ratio, cost_saved')
-        .eq('status', 'completed');
-
-      if (data && data.length > 0) {
-        const rows = data as Pick<N8nResult, 'original_token_count' | 'compressed_token_count' | 'compression_ratio' | 'cost_saved'>[];
-        const tokensSaved = rows.reduce((sum, r) => sum + (r.original_token_count - r.compressed_token_count), 0);
-        const avgRatio = rows.reduce((sum, r) => sum + (r.compression_ratio ?? 0), 0) / rows.length;
-        const totalCost = rows.reduce((sum, r) => sum + (r.cost_saved ?? 0), 0);
-        setKpi({ tokensSaved, avgCompressionRatio: avgRatio, totalCostSaved: totalCost, runCount: rows.length });
-      }
+      await refreshKpis();
     } catch (err: unknown) {
       console.error('[n8n webhook] compression failed:', err);
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setCompressError(`Compression failed: ${msg}`);
-    } finally {
-      setIsCompressing(false);
     }
   };
 
@@ -268,6 +291,61 @@ export const DashboardPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Live Compression Metrics — additional real Supabase aggregates, beside the marketing dashboard above */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-zinc-500">
+          <Activity className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Live Compression Metrics — Supabase</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 font-mono">
+          {[
+            {
+              label: 'Total Compressions',
+              icon: Layers,
+              value: kpi.runCount > 0 ? kpi.runCount.toLocaleString() : '—',
+            },
+            {
+              label: 'Avg Compression Ratio',
+              icon: Percent,
+              value: kpi.avgCompressionRatio > 0 ? `${kpi.avgCompressionRatio.toFixed(1)}%` : '—',
+            },
+            {
+              label: 'Avg Reasoning Retention',
+              icon: Brain,
+              value: kpi.avgReasoningRetention != null ? `${kpi.avgReasoningRetention.toFixed(1)}%` : 'N/A',
+            },
+            {
+              label: 'Total Tokens Saved',
+              icon: Zap,
+              value: formatTokensSaved(kpi.tokensSaved),
+            },
+            {
+              label: 'Avg Cost Saved',
+              icon: DollarSign,
+              value: kpi.runCount > 0 ? `$${kpi.avgCostSaved.toFixed(5)}` : '$0',
+            },
+            {
+              label: 'Avg Latency Reduction',
+              icon: Timer,
+              value: kpi.avgLatencyReductionPct != null ? `${kpi.avgLatencyReductionPct.toFixed(1)}%` : 'N/A',
+            },
+          ].map((m) => (
+            <div
+              key={m.label}
+              className="p-3.5 rounded-xl border border-white/10 bg-zinc-950/60 hover:border-white/20 transition-all"
+            >
+              <div className="flex items-center justify-between text-zinc-500 mb-1.5">
+                <span className="text-[9px] uppercase tracking-wider leading-tight">{m.label}</span>
+                <m.icon className="w-3.5 h-3.5 shrink-0" />
+              </div>
+              <div className="text-base font-bold text-white">
+                {kpiLoading ? <span className="text-zinc-600 text-xs">...</span> : m.value}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Prompt Compressor Workbench */}
       <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6 space-y-6">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-white/10">
@@ -319,10 +397,10 @@ export const DashboardPage: React.FC = () => {
 
             <button
               onClick={handleRunCompression}
-              disabled={isCompressing}
+              disabled={pipeline.isRunning}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-white text-black font-semibold text-xs hover:bg-zinc-200 transition-all shadow-[0_0_20px_rgba(255,255,255,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isCompressing ? (
+              {pipeline.isRunning ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span>Compressing...</span>
@@ -337,28 +415,17 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Loading animation */}
-        {isCompressing && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="p-4 rounded-xl border border-white/10 bg-zinc-900/80 font-mono text-xs space-y-2"
-          >
-            <div className="flex items-center justify-between text-zinc-400">
-              <span className="flex items-center gap-2 text-emerald-400">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Calling n8n webhook...
-              </span>
-            </div>
-            <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-              <motion.div
-                initial={{ width: '0%' }}
-                animate={{ width: '85%' }}
-                transition={{ duration: 2, ease: 'easeInOut' }}
-                className="h-full bg-emerald-400"
-              />
-            </div>
-          </motion.div>
-        )}
+        {/* Real n8n pipeline visualization — always visible, states driven by useCompressionRun */}
+        <div className="p-4 rounded-xl border border-white/10 bg-zinc-900/50">
+          <CompressionPipeline
+            stages={pipeline.stages}
+            activeIndex={pipeline.activeIndex}
+            statusLabel={pipeline.statusLabel}
+            elapsedMs={pipeline.elapsedMs}
+            estimatedTokens={pipeline.estimatedTokens}
+            errorMessage={pipeline.errorMessage}
+          />
+        </div>
 
         {/* Error banner */}
         {compressError && (
@@ -428,6 +495,44 @@ export const DashboardPage: React.FC = () => {
                   {compressionResult.compressed_text}
                 </pre>
               </div>
+            </div>
+
+            {/* Backend-driven metrics strip: ratio, cost, latency before/after, status */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 font-mono text-xs">
+              <div className="p-3 rounded-lg border border-white/10 bg-zinc-900/60">
+                <span className="text-[9px] uppercase tracking-wider text-zinc-500 block mb-1">Compression Ratio</span>
+                <span className="text-sm font-bold text-emerald-400">{compressionResult.compression_ratio.toFixed(1)}%</span>
+              </div>
+              <div className="p-3 rounded-lg border border-white/10 bg-zinc-900/60">
+                <span className="text-[9px] uppercase tracking-wider text-zinc-500 block mb-1">Cost Saved</span>
+                <span className="text-sm font-bold text-white">${compressionResult.cost_saved.toFixed(5)}</span>
+              </div>
+              <div className="p-3 rounded-lg border border-white/10 bg-zinc-900/60">
+                <span className="text-[9px] uppercase tracking-wider text-zinc-500 block mb-1">Latency Before</span>
+                <span className="text-sm font-bold text-rose-400">
+                  {compressionResult.latency_original_ms != null ? `${compressionResult.latency_original_ms}ms` : 'N/A'}
+                </span>
+              </div>
+              <div className="p-3 rounded-lg border border-white/10 bg-zinc-900/60">
+                <span className="text-[9px] uppercase tracking-wider text-zinc-500 block mb-1">Latency After</span>
+                <span className="text-sm font-bold text-emerald-400">
+                  {compressionResult.latency_compressed_ms != null ? `${compressionResult.latency_compressed_ms}ms` : 'N/A'}
+                </span>
+              </div>
+              <div className="p-3 rounded-lg border border-white/10 bg-zinc-900/60">
+                <span className="text-[9px] uppercase tracking-wider text-zinc-500 block mb-1">Status</span>
+                <span className="text-sm font-bold text-white capitalize">{compressionResult.status.replace(/_/g, ' ')}</span>
+              </div>
+            </div>
+
+            {/* Reasoning Retention Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <ReasoningGauge score={null} label="Original Reasoning Score" icon={Brain} />
+              <ReasoningGauge
+                score={compressionResult.reasoning_retention_score}
+                label="Compressed Reasoning Retention"
+                icon={Gauge}
+              />
             </div>
 
             {/* Cost saved chip */}
