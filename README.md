@@ -101,8 +101,8 @@ Real-time and historical values for all four metrics are visible on the **Enterp
 **Landing Page**
 <img src="./screenshots/landing-page.png" width="100%" alt="Landing Page" />
 
-**Interactive Pipeline Visualization** — landing page walkthrough of the compression stages
-<img src="./screenshots/pipeline-visualization.png" width="100%" alt="Pipeline Visualization" />
+**Interactive Pipeline Visualization** — landing page walkthrough of the real 11-stage compression pipeline
+<img src="./screenshots/pipeline.png" width="100%" alt="Pipeline Visualization" />
 
 **Sign Up**
 <img src="./screenshots/signup-page.png" width="100%" alt="Sign Up" />
@@ -110,14 +110,14 @@ Real-time and historical values for all four metrics are visible on the **Enterp
 **Upload / Compression Studio**
 <img src="./screenshots/upload-compression-studio.png" width="100%" alt="Upload Compression Studio" />
 
-**Enterprise Dashboard** — live KPIs pulled directly from Supabase
-<img src="./screenshots/enterprise-dashboard.png" width="100%" alt="Enterprise Dashboard" />
+**Enterprise Dashboard** — live KPIs pulled directly from Supabase, plus the real n8n pipeline running end-to-end
+<img src="./screenshots/dash.png" width="100%" alt="Enterprise Dashboard" />
 
 **Compression Run History** — full audit trail of every request
 <img src="./screenshots/compression-history.png" width="100%" alt="Compression History" />
 
 **n8n Workflow Editor** — the actual compression pipeline, node by node
-<img src="./screenshots/n8n-workflow-editor.png" width="100%" alt="n8n Workflow Editor" />
+<img src="./screenshots/n8n01.png" width="100%" alt="n8n Workflow Editor" />
 
 **Supabase Table** — every evaluation metric, per run, live
 <img src="./screenshots/supabase-database.png" width="100%" alt="Supabase Database" />
