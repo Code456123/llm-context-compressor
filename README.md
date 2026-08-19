@@ -11,7 +11,6 @@
 ![Supabase](https://img.shields.io/badge/Supabase-Postgres-3ecf8e?logo=supabase&logoColor=white)
 ![n8n](https://img.shields.io/badge/n8n-workflow_automation-ea4b71?logo=n8n&logoColor=white)
 
-Built for **Innovahack 2026** · Domain 3: Gen AI · Problem Statement 2
 
 ---
 
