@@ -175,10 +175,6 @@ Only variables prefixed `VITE_` are bundled into the frontend build; anything el
 🔗 **[https://llm-context-compressor.vercel.app/]**
 
 
-## Built For
-
-**Innovahack 2026** — Domain 3: Gen AI — Problem Statement 2: *Ultra-Low Resource LLM Context Compression Engine*
-
 **Core requirements:**
 
 - [x] Build an algorithmic token pre-processor that strips semantic redundancy from prompt windows — see `Strip Boilerplate` and `Algorithmic Compress` in the [pipeline](#architecture)
